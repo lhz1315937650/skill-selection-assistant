@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/lhz1315937650/skill-selection-assistant)](https://github.com/lhz1315937650/skill-selection-assistant/releases)
 [![License](https://img.shields.io/github/license/lhz1315937650/skill-selection-assistant)](./LICENSE)
 
-A Codex skill that checks the local skill library first, recommends the best matching skills in the user's own language, asks the user which one to use, and requires confirmation before any environment download or installation.
+A Codex skill that checks the local skill library first, recommends the best matching skills in the user's own language, asks the user which one to use, and requires confirmation before any environment download, installation, or user-specific prerequisite configuration.
 
 ## Why This Skill Exists
 
@@ -23,6 +23,7 @@ This skill adds a lightweight skill-routing step before normal work begins.
 - introduces matched skills in the same language the user used
 - asks the user which skill they want to use
 - asks for confirmation before downloading or installing dependencies required by a selected skill
+- asks follow-up setup questions when the selected skill still needs user-specific prerequisite configuration
 
 ## Repository Structure
 
@@ -62,6 +63,7 @@ If you want this skill to run before normal requests, add a global instruction i
 3. recommend the best matching skills in the user's own language
 4. ask the user to choose
 5. ask before any environment download or installation
+6. ask follow-up prerequisite configuration questions when the selected skill still needs user choices
 
 Example:
 
@@ -74,6 +76,7 @@ Before answering each new normal request:
 4. Briefly explain them in the same language the user used.
 5. Ask the user which skill to use before continuing.
 6. If a selected skill requires downloads or environment setup, ask for confirmation first.
+7. If a selected skill still needs user-specific prerequisite configuration, ask those setup questions before execution.
 ```
 
 ## Behavior Summary
@@ -83,6 +86,7 @@ The skill is designed to be:
 - skill-first, not keyword-spammy
 - language-aware in the selection step
 - conservative about environment setup
+- explicit about prerequisite configuration before execution
 - easy to customize for personal Codex workflows
 
 ## Customization

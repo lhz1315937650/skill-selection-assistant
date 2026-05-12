@@ -1,6 +1,6 @@
 ---
 name: skill-selection-assistant
-description: Detect the most relevant local Codex skills for the current user request, introduce the best 1-3 options in the same language the user used, ask the user which skill to use, and confirm before any required environment download or installation.
+description: Detect the most relevant local Codex skills for the current user request, introduce the best 1-3 options in the same language the user used, ask the user which skill to use, and confirm before any required environment download, installation, or user-specific prerequisite configuration.
 metadata:
   short-description: Match local skills and ask the user to choose
 ---
@@ -19,7 +19,8 @@ Before solving the user's request:
 4. Introduce the matched skills in the same language the user used for the request.
 5. Ask the user which skill they want to use.
 6. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
-7. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
+7. If a selected skill needs user-specific prerequisite configuration, ask the required setup questions before execution.
+8. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
 
 ## When To Use
 
@@ -104,6 +105,42 @@ Recommended wording:
 ```text
 This skill may need some extra environment setup before use, mainly: {one short description of the dependency type}.
 Do you want me to continue with the download and setup now?
+```
+
+## Prerequisite Configuration Questions
+
+If the selected skill does not need downloads but still depends on user-specific setup choices, ask a short question flow before execution.
+
+Typical cases include:
+
+- account or workspace selection
+- API key or connector source choice
+- browser profile or target app selection
+- output path, publishing target, or destination selection
+- provider, model, format, or mode selection
+
+Rules:
+
+1. Use the same language the user used in the request.
+2. Ask only the minimum number of questions needed to unblock the selected skill.
+3. Prefer short, practical setup questions over long explanations.
+4. Do not silently choose user-owned settings when they may change the result in an important way.
+5. If a safe obvious default exists, offer it clearly and let the user confirm it.
+
+Recommended wording:
+
+- Chinese example:
+
+```text
+这个 skill 在继续之前还需要先确认几个前置配置，比如：{一句话说明配置类型}。
+我先问你这几个设置，再继续执行，可以吗？
+```
+
+- English example:
+
+```text
+Before this skill can continue, I still need to confirm a few prerequisite settings, mainly: {one short description of the configuration type}.
+I’ll ask you those setup questions first, then continue. Is that okay?
 ```
 
 ## Continue Conditions
