@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3.0 - 2026-05-12
+
+- added conversation-level active skill continuity after the user's first skill choice
+- now keeps using the user's previously chosen skill on later turns when the workflow still fits
+- now asks the user to choose again only when a later turn clearly needs a different skill
+- refreshed the public README and agent metadata so the GitHub presentation is clearer and cleaner
+
 ## v1.2.0 - 2026-05-12
 
 - added prerequisite-configuration question flow after skill selection

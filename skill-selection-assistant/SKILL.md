@@ -21,6 +21,8 @@ Before solving the user's request:
 6. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
 7. If a selected skill needs user-specific prerequisite configuration, ask the required setup questions before execution.
 8. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
+9. After the user chooses a skill for the current conversation, keep using that active skill on later turns unless the work clearly needs a different skill.
+10. Ask the user to choose again only when a later turn clearly introduces a different skill with a meaningfully different workflow, setup, or output.
 
 ## When To Use
 
@@ -29,6 +31,8 @@ Use this skill when:
 - the request may match one or more local skills
 - the user did not explicitly name which skill to use
 - the conversation should stay skill-first
+- no active skill has already been chosen for the current conversation
+- or the current turn clearly needs a different skill from the active one
 
 Skip this skill when:
 
@@ -36,6 +40,23 @@ Skip this skill when:
 - the user says `直接回答`
 - the user says `不使用skill`
 - the user is asking to install, rename, inspect, organize, debug, or publish skills themselves
+- the current turn can continue naturally under the skill the user already chose earlier in the same conversation
+
+## Conversation Continuity
+
+Treat the user's first confirmed skill choice in a conversation as the active skill for that conversation.
+
+On later turns:
+
+- If the new request still fits the active skill, continue without re-running skill selection.
+- If the new request clearly needs a different skill, briefly surface the best `1-3` new options and ask the user to choose again.
+- If the user explicitly switches skills, follow the new choice and treat it as the active skill from that point onward.
+- If the user explicitly says to answer directly or not use a skill, do not force the prior active skill.
+
+Use a practical standard when deciding whether a new skill is involved:
+
+- Do not re-ask just because the user is moving to a more specific step inside the same workflow.
+- Do re-ask when the next step is better handled by a different skill with a materially different workflow, setup requirement, or deliverable style.
 
 ## Matching Rules
 
@@ -140,7 +161,7 @@ Recommended wording:
 
 ```text
 Before this skill can continue, I still need to confirm a few prerequisite settings, mainly: {one short description of the configuration type}.
-I’ll ask you those setup questions first, then continue. Is that okay?
+I'll ask you those setup questions first, then continue. Is that okay?
 ```
 
 ## Continue Conditions
@@ -148,6 +169,7 @@ I’ll ask you those setup questions first, then continue. Is that okay?
 You may continue without asking again only when one of these is true:
 
 - the user explicitly picked a skill
+- the user already picked a skill earlier in the same conversation and the current turn still fits that active skill
 - the user said `直接回答`
 - the user said `不使用skill`
 - the user is asking a pure skill-management question and the answer itself is about skills
