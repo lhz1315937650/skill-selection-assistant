@@ -1,6 +1,6 @@
 ---
 name: skill-selection-assistant
-description: Detect the most relevant local Codex skills for the current user request, introduce the best 1-3 options in simple Chinese, ask the user which skill to use, and confirm before any required environment download or installation.
+description: Detect the most relevant local Codex skills for the current user request, introduce the best 1-3 options in the same language the user used, ask the user which skill to use, and confirm before any required environment download or installation.
 metadata:
   short-description: Match local skills and ask the user to choose
 ---
@@ -16,7 +16,7 @@ Before solving the user's request:
 1. Inspect local skills under the user's Codex skills directory.
 2. Find the smallest useful set of relevant skills.
 3. Prefer the best `1-3` skills instead of dumping a long list.
-4. Introduce the matched skills in simple Chinese.
+4. Introduce the matched skills in the same language the user used for the request.
 5. Ask the user which skill they want to use.
 6. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
 7. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
@@ -55,23 +55,24 @@ When multiple skills match, prefer this order:
 3. Explicitly installed topical skills such as `baoyu-*`
 4. Larger research or community libraries only if they are clearly a better fit
 
-## Chinese Intro Format
+## Selection Reply Language
 
-Use short, practical Chinese. Keep each skill explanation to one sentence.
+Use the same language the user used in their current request.
 
-Recommended format:
+- If the user asks in Chinese, reply in Chinese.
+- If the user asks in English, reply in English.
+- If the user asks in Japanese, reply in Japanese.
+- If the user clearly mixes languages, follow the dominant language of the request.
 
-```text
-我先帮你匹配了一下当前本地比较适合的 skill：
+Keep each skill explanation short and practical, ideally one sentence per skill.
 
-1. skill-name
-   作用：一句中文说明它适合拿来做什么。
+Recommended pattern:
 
-2. skill-name
-   作用：一句中文说明它适合拿来做什么。
-
-你想用哪个 skill？如果你想，我也可以直接回答，不走 skill 选择。
-```
+1. Briefly say you matched the most relevant local skills.
+2. List the best `1-3` skills.
+3. Give one short practical explanation for each skill.
+4. Ask which skill the user wants to use.
+5. Optionally mention that you can also answer directly without using the selection step.
 
 ## Environment Setup Confirmation
 
@@ -84,16 +85,25 @@ If a matched or selected skill appears likely to require extra setup, such as:
 
 then before continuing:
 
-1. Tell the user briefly in Chinese that this skill may need additional environment download or installation.
+1. Tell the user briefly in the same language they used that this skill may need additional environment download or installation.
 2. Explain the setup in one short practical sentence.
 3. Ask the user whether to continue with the download or installation.
 4. Do not start the download or installation unless the user clearly agrees.
 
 Recommended wording:
 
+- Chinese example:
+
 ```text
 这个 skill 在使用前可能需要先下载或安装一些环境依赖，主要是：{一句话说明依赖类型}。
 你要我现在继续下载并配置吗？
+```
+
+- English example:
+
+```text
+This skill may need some extra environment setup before use, mainly: {one short description of the dependency type}.
+Do you want me to continue with the download and setup now?
 ```
 
 ## Continue Conditions

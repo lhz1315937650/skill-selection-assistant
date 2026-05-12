@@ -1,4 +1,4 @@
 interface:
   display_name: "技能选择助手"
-  short_description: "先匹配本地 skill，再用中文简要介绍并让用户选择"
-  default_prompt: "Inspect the local skill library, pick the best 1-3 matching skills, introduce them briefly in simple Chinese, and ask the user which skill to use. If a selected skill may require downloading or installing dependencies, ask for confirmation before starting environment setup."
+  short_description: "先匹配本地 skill，再按用户提问语言简要介绍并让用户选择"
+  default_prompt: "Inspect the local skill library, pick the best 1-3 matching skills, introduce them briefly in the same language the user used, and ask the user which skill to use. If a selected skill may require downloading or installing dependencies, ask for confirmation before starting environment setup."

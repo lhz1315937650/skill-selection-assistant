@@ -3,7 +3,7 @@
 [![Release](https://img.shields.io/github/v/release/lhz1315937650/skill-selection-assistant)](https://github.com/lhz1315937650/skill-selection-assistant/releases)
 [![License](https://img.shields.io/github/license/lhz1315937650/skill-selection-assistant)](./LICENSE)
 
-A Codex skill that checks the local skill library first, recommends the best matching skills in simple Chinese, asks the user which one to use, and requires confirmation before any environment download or installation.
+A Codex skill that checks the local skill library first, recommends the best matching skills in the user's own language, asks the user which one to use, and requires confirmation before any environment download or installation.
 
 ## Why This Skill Exists
 
@@ -20,7 +20,7 @@ This skill adds a lightweight skill-routing step before normal work begins.
 
 - inspects the local skill library before continuing with a normal request
 - selects the best `1-3` matching skills instead of dumping a long list
-- introduces matched skills in simple Chinese
+- introduces matched skills in the same language the user used
 - asks the user which skill they want to use
 - asks for confirmation before downloading or installing dependencies required by a selected skill
 
@@ -59,7 +59,7 @@ If you want this skill to run before normal requests, add a global instruction i
 
 1. inspect the local skills directory
 2. use `skill-selection-assistant` first
-3. recommend the best matching skills in Chinese
+3. recommend the best matching skills in the user's own language
 4. ask the user to choose
 5. ask before any environment download or installation
 
@@ -71,7 +71,7 @@ Before answering each new normal request:
 1. Inspect the local skill library.
 2. Use `skill-selection-assistant` first.
 3. Match the best 1-3 local skills.
-4. Briefly explain them in simple Chinese.
+4. Briefly explain them in the same language the user used.
 5. Ask the user which skill to use before continuing.
 6. If a selected skill requires downloads or environment setup, ask for confirmation first.
 ```
@@ -81,7 +81,7 @@ Before answering each new normal request:
 The skill is designed to be:
 
 - skill-first, not keyword-spammy
-- Chinese-friendly in the selection step
+- language-aware in the selection step
 - conservative about environment setup
 - easy to customize for personal Codex workflows
 
