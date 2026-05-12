@@ -1,13 +1,27 @@
 # Skill Selection Assistant
 
-A Codex skill that checks the local skill library first, recommends the best matching skills in simple Chinese, asks the user which one to use, and confirms before any required environment download or installation.
+[![Release](https://img.shields.io/github/v/release/lhz1315937650/skill-selection-assistant)](https://github.com/lhz1315937650/skill-selection-assistant/releases)
+[![License](https://img.shields.io/github/license/lhz1315937650/skill-selection-assistant)](./LICENSE)
+
+A Codex skill that checks the local skill library first, recommends the best matching skills in simple Chinese, asks the user which one to use, and requires confirmation before any environment download or installation.
+
+## Why This Skill Exists
+
+When a Codex setup has many local skills, the model can easily:
+
+- skip skill selection entirely
+- list too many skills at once
+- mix skill names with no practical explanation
+- start installing dependencies without clearly asking first
+
+This skill adds a lightweight skill-routing step before normal work begins.
 
 ## What It Does
 
-- inspects local skills before continuing with a normal request
+- inspects the local skill library before continuing with a normal request
 - selects the best `1-3` matching skills instead of dumping a long list
 - introduces matched skills in simple Chinese
-- asks the user which skill to use
+- asks the user which skill they want to use
 - asks for confirmation before downloading or installing dependencies required by a selected skill
 
 ## Repository Structure
@@ -15,6 +29,8 @@ A Codex skill that checks the local skill library first, recommends the best mat
 ```text
 skill-selection-assistant/
 ├─ README.md
+├─ LICENSE
+├─ CHANGELOG.md
 └─ skill-selection-assistant/
    ├─ SKILL.md
    └─ agents/
@@ -37,7 +53,7 @@ On Windows for a default local setup:
 C:\Users\<YourUser>\.codex\skills\skill-selection-assistant
 ```
 
-## Recommended Global Rule
+## Recommended AGENTS.md Rule
 
 If you want this skill to run before normal requests, add a global instruction in your `AGENTS.md` telling Codex to:
 
@@ -47,8 +63,39 @@ If you want this skill to run before normal requests, add a global instruction i
 4. ask the user to choose
 5. ask before any environment download or installation
 
-## Notes
+Example:
 
-- This repository contains a single reusable skill.
-- The skill is optimized for Chinese-language selection prompts.
-- You can customize the wording in `SKILL.md` for your own workflow.
+```md
+Before answering each new normal request:
+
+1. Inspect the local skill library.
+2. Use `skill-selection-assistant` first.
+3. Match the best 1-3 local skills.
+4. Briefly explain them in simple Chinese.
+5. Ask the user which skill to use before continuing.
+6. If a selected skill requires downloads or environment setup, ask for confirmation first.
+```
+
+## Behavior Summary
+
+The skill is designed to be:
+
+- skill-first, not keyword-spammy
+- Chinese-friendly in the selection step
+- conservative about environment setup
+- easy to customize for personal Codex workflows
+
+## Customization
+
+You can edit:
+
+- `skill-selection-assistant/SKILL.md` to change matching logic or wording
+- `skill-selection-assistant/agents/openai.yaml` to adjust display metadata
+
+## Release Notes
+
+See [CHANGELOG.md](./CHANGELOG.md) for version history.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
