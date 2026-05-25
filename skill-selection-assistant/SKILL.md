@@ -24,6 +24,19 @@ Before solving the user's request:
 9. After the user chooses a skill for the current conversation, keep using that active skill on later turns unless the work clearly needs a different skill.
 10. Ask the user to choose again only when a later turn clearly introduces a different skill with a meaningfully different workflow, setup, or output.
 
+## Portability Rule
+
+This skill must work for any user who installs it.
+
+Therefore:
+
+- inspect the user's own local Codex skills directory
+- do not depend on the publisher's personal filesystem path
+- treat `$CODEX_HOME/skills` as the typical portable skills root
+- treat platform-specific paths only as examples for documentation
+
+Never define published behavior in a way that requires a hardcoded machine-specific path such as `C:\Users\Administrator\.codex\skills`.
+
 ## When To Use
 
 Use this skill when:
@@ -163,6 +176,19 @@ Recommended wording:
 Before this skill can continue, I still need to confirm a few prerequisite settings, mainly: {one short description of the configuration type}.
 I'll ask you those setup questions first, then continue. Is that okay?
 ```
+
+## Portable Indexing Direction
+
+If this skill later adds install-time or update-time offline scanning, that scan must target the user's own local skill installation, not the repository author's machine.
+
+The intended portable rule is:
+
+1. resolve the user's skills root from the runtime environment
+2. scan that local skills root
+3. build a lightweight catalog from installed skills
+4. use that catalog for future prefiltering
+
+Do not describe or implement offline indexing as scanning a hardcoded personal development path.
 
 ## Continue Conditions
 

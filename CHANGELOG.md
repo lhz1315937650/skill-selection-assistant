@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.4.0 - 2026-05-25
+
+- added a portability rule so published behavior must target each user's own installed local skills, not the repository author's personal path
+- documented that future offline indexing should scan the user's runtime skills root, typically `$CODEX_HOME/skills`
+- cleaned up README, skill instructions, and agent metadata to remove machine-specific assumptions and broken display text
+
 ## v1.3.0 - 2026-05-12
 
 - added conversation-level active skill continuity after the user's first skill choice
