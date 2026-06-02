@@ -206,25 +206,54 @@ The scanner should:
 
 1. Locate the user's local skills root.
 2. Read each `SKILL.md` frontmatter and lightweight body preview.
-3. Classify each skill into multi-level categories.
+3. Classify each skill into weighted multi-level categories.
 4. Write `.skill-index/skills-index.json`.
 5. Write `.skill-index/skills-categories.md`.
-6. Write or preserve `.skill-index/selection-memory.md`.
+6. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
+7. Write category-specific route files under `.skill-index/routes/`.
+8. Write or preserve `.skill-index/selection-memory.md`.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
+
+The generated index is a recommendation view, not a destructive filesystem operation. It may merge duplicate names in the index while keeping all real local skill files untouched.
+
+## Token-Saving Route-First Selection
+
+Do not read every local skill before recommendation. Always use a route-first workflow:
+
+1. Understand the user's request and infer the likely `primary_domain`, `domain_detail`, and `task_type`.
+2. Read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
+3. Choose the most relevant route file from `.skill-index/routes/primary-domain/`, `.skill-index/routes/domain-detail/`, or `.skill-index/routes/task-type/`.
+4. Prefer running `scripts/select-route-candidates.ps1` with the chosen route and user request so only a small shortlist enters the conversation.
+5. If the selector script is unavailable, read only the chosen route file to get compact candidate metadata.
+6. Shortlist the best `1-3` candidates from the selector output or route file.
+7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
+8. Never load the full `.skill-index/skills-index.json` unless route files are missing, stale, or insufficient.
+
+Selector command pattern:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web -Limit 12
+```
+
+If multiple categories are plausible, prefer the narrowest high-confidence `domain_detail` route. If the request is broad or ambiguous, use `primary_domain` first, then refine with `task_type`.
 
 ## Multi-Level Classification
 
 Classify each local skill using:
 
 - `origin`: `user-local`, `official-system`, `installed-topic`, `linked-external`, or `unknown`
-- `domain`: broad area such as `writing`, `research`, `coding`, `data`, `design`, `documents`, `automation`, `publishing`, `safety`, or `general`
+- `primary_domain`: best single broad area for fast selection
+- `domain`: broad areas such as `writing`, `research`, `coding`, `data`, `design`, `documents`, `publishing`, `safety`, or `general`
+- `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
 - `task_type`: practical action such as `summarize`, `review`, `generate`, `transform`, `test-debug`, `extract`, `publish`, `plan`, or `analyze`
 - `output_type`: likely output such as `markdown`, `image`, `pptx`, `docx`, `xlsx`, `html`, `code`, `report`, or `workflow`
 - `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
 - `status`: `active`, `needs-review`, `deprecated`, or `unknown`
+- `duplicate_count`: how many same-name local entries were merged into this recommendation candidate
+- `source_paths`: all local source paths represented by the merged candidate
 
-Use these categories internally for selection. Do not expose a long taxonomy to the user unless they ask.
+For domain detection, prefer strong signals from the skill name, then frontmatter descriptions, then body previews. Use these categories internally for selection. Do not expose a long taxonomy to the user unless they ask.
 
 ## Selection Workflow In A Project Conversation
 
@@ -232,13 +261,16 @@ At the beginning of a normal project conversation:
 
 1. Detect the user's language.
 2. Summarize the current request internally.
-3. Load `.skill-index/skills-index.json` if available.
-4. Match skills by semantic fit, not only keywords.
-5. Prefer exact workflow fit over broad domain fit.
-6. Recommend only `1-3` skills.
-7. Use the user's language for the recommendation.
-8. Keep each recommendation concise: skill name plus one short practical reason.
-9. Ask which skill to use, unless a skip condition applies.
+3. Infer the best category before reading skill bodies.
+4. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
+5. Run `scripts/select-route-candidates.ps1` for the inferred category when available.
+6. Read only the matching route file if the selector is unavailable.
+7. Match compact route candidates by semantic fit, not only keywords.
+8. Prefer exact workflow fit, `primary_domain`, and `domain_detail` over broad keyword overlap.
+9. Recommend only `1-3` skills.
+10. Use the user's language for the recommendation.
+11. Keep each recommendation concise: skill name plus one short practical reason.
+12. Ask which skill to use, unless a skip condition applies.
 
 Chinese recommendation style:
 

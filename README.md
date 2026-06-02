@@ -74,23 +74,46 @@ It scans the user's own local Codex skills root and writes:
 skill-selection-assistant/.skill-index/
 |-- skills-index.json
 |-- skills-categories.md
+|-- route-summary.json
+|-- route-summary.md
+|-- routes/
+|   |-- primary-domain/
+|   |-- domain-detail/
+|   `-- task-type/
 `-- selection-memory.md
 ```
 
 The generated index is local to the installing user and is ignored by git.
+
+For token efficiency, `skills-index.json` is treated as a fallback and audit file. Normal recommendation should read `route-summary` first, choose one category, and then inspect only the matching route file.
+
+You can also ask the local selector to return a small shortlist from one route:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web -Limit 12
+```
 
 ## Self-Growing Skill Library
 
 This skill is intended to make the whole local skill library self-growing:
 
 1. build a lightweight local skill catalog during install or update
-2. classify requests against that catalog first
-3. send only the top candidate skills into the main routing step
-4. record useful and failed matches in local selection memory
-5. suggest new skills when repeated workflows are not covered
-6. suggest linking, merging, or reviewing overlapping skills
+2. classify requests into a primary domain, fine-grained domain, and task type first
+3. read only the matching route file instead of reading every skill
+4. send only the top candidate skills into the main routing step
+5. record useful and failed matches in local selection memory
+6. suggest new skills when repeated workflows are not covered
+7. suggest linking, merging, or reviewing overlapping skills
 
 By itself, smarter in-model recommendation does not guarantee lower token usage if the host still injects the full skill list every turn.
+
+The intended default is route-first selection:
+
+1. infer category
+2. read `route-summary`
+3. run `select-route-candidates.ps1` or read one route file
+4. recommend `1-3` skills
+5. read actual `SKILL.md` files only after shortlisting or user choice
 
 ## Example Flow
 
@@ -151,7 +174,8 @@ skill-selection-assistant/
 `-- skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
-    |   `-- scan-local-skills.ps1
+    |   |-- scan-local-skills.ps1
+    |   `-- select-route-candidates.ps1
     `-- agents/
         `-- openai.yaml
 ```

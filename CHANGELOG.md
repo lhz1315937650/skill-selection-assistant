@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.1 - 2026-06-02
+
+- added route-first skill selection to avoid reading the full local skill index by default
+- added route summary files and category route generation for primary domains, fine-grained domains, and task types
+- added `scripts/select-route-candidates.ps1` to return a small local shortlist from one selected route
+- documented that actual `SKILL.md` files should be read only after shortlisting or after the user chooses a skill
+- improved token efficiency for large local skill libraries while preserving the full index as a fallback and audit file
+
 ## v1.5.0 - 2026-06-02
 
 - added first-use / install-time local skill scanning through `scripts/scan-local-skills.ps1`
