@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.4 - 2026-06-02
+
+- added a dependency-free PowerShell smoke test suite under `tests/`
+- added fixture skills covering frontend routing, academic routing, spreadsheet classification, testing/debugging, exact duplicate merging, and same-name variant preservation
+- verified scan, stale route cleanup, route inference, shortlist selection, and one-command recommendation through `tests/run-smoke-tests.ps1`
+- documented the smoke test command for pre-release validation
+
 ## v1.5.3 - 2026-06-02
 
 - added `scripts/recommend-skills.ps1` as a one-command route inference and candidate selection wrapper

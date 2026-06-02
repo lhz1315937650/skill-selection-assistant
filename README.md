@@ -177,6 +177,9 @@ skill-selection-assistant/
 |-- CHANGELOG.md
 |-- INSTALLATION_BEHAVIOR.md
 |-- SELF_GROWTH.md
+|-- tests/
+|   |-- run-smoke-tests.ps1
+|   `-- fixtures/
 `-- skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
@@ -205,6 +208,23 @@ C:\Users\<YourUser>\.codex\skills\skill-selection-assistant
 ```
 
 The skill should inspect the user's local Codex skills directory at runtime, not any repository author's personal path.
+
+## Test
+
+Run the dependency-free smoke test before publishing or changing routing logic:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
+```
+
+The smoke test uses a tiny fixture skill library and verifies:
+
+- local scanning and index generation
+- exact duplicate merging
+- same-name different-content variant preservation
+- stale route and shortlist cleanup on rescan
+- route inference for frontend and academic requests
+- one-command recommendation through `recommend-skills.ps1`
 
 ## Recommended AGENTS.md Rule
 
