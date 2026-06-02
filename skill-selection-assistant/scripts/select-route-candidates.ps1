@@ -9,7 +9,8 @@ param(
   [string]$Category,
 
   [int]$Limit = 12,
-  [string]$IndexDir = ""
+  [string]$IndexDir = "",
+  [switch]$UseFullRoute
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +43,16 @@ function Get-OriginBoost {
   }
 }
 
+function New-UWord {
+  param([int[]]$Codes)
+  return (-join ($Codes | ForEach-Object { [char]$_ }))
+}
+
+function Test-ContainsUWord {
+  param([string]$Text, [int[]]$Codes)
+  return $Text.Contains((New-UWord -Codes $Codes))
+}
+
 if (-not $IndexDir) {
   $skillDir = Split-Path -Parent $PSScriptRoot
   $IndexDir = Join-Path $skillDir ".skill-index"
@@ -53,7 +64,13 @@ $routeFolder = switch ($RouteType) {
   "task_type" { "task-type" }
 }
 
-$routePath = Join-Path (Join-Path (Join-Path $IndexDir "routes") $routeFolder) ((Get-SafeFileName -Name $Category) + ".json")
+$fileName = (Get-SafeFileName -Name $Category) + ".json"
+$routePath = Join-Path (Join-Path (Join-Path $IndexDir "routes") $routeFolder) $fileName
+$shortlistPath = Join-Path (Join-Path (Join-Path $IndexDir "shortlists") $routeFolder) $fileName
+if ((-not $UseFullRoute) -and (Test-Path -LiteralPath $shortlistPath)) {
+  $routePath = $shortlistPath
+}
+
 if (-not (Test-Path -LiteralPath $routePath)) {
   throw "Route file not found: $routePath. Re-run scan-local-skills.ps1 or choose a category from route-summary.md."
 }
@@ -61,6 +78,23 @@ if (-not (Test-Path -LiteralPath $routePath)) {
 $route = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $tokens = Get-TokenList -Text ($Query + " " + $Category)
 $categoryTokens = Get-TokenList -Text $Category
+$queryLower = $Query.ToLowerInvariant()
+$wantsVisual = (
+  $queryLower.Contains("ui") -or
+  $queryLower.Contains("design") -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x597D,0x770B)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x7F8E,0x89C2)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x8BBE,0x8BA1)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x754C,0x9762))
+)
+$wantsTesting = (
+  $queryLower.Contains("test") -or
+  $queryLower.Contains("debug") -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x6D4B,0x8BD5)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x8C03,0x8BD5)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x62A5,0x9519)) -or
+  (Test-ContainsUWord -Text $queryLower -Codes @(0x4FEE,0x590D))
+)
 
 $scored = foreach ($candidate in @($route.candidates)) {
   $haystack = @(
@@ -90,8 +124,19 @@ $scored = foreach ($candidate in @($route.candidates)) {
   if (@($candidate.task_type) -contains $Category) { $score += 5 }
   if ([int]$candidate.duplicate_count -gt 1) { $score += [Math]::Min([int]$candidate.duplicate_count, 6) }
 
+  if ($wantsVisual -and ($haystack -match "design|visual|interface|ui|frontend")) {
+    $score += 18
+  }
+  if ((-not $wantsTesting) -and (@($candidate.task_type) -contains "test-debug")) {
+    $score -= 10
+  }
+  if ((-not $wantsTesting) -and ($candidate.name.ToLowerInvariant() -match "test|debug")) {
+    $score -= 12
+  }
+
   [pscustomobject]@{
     score = $score
+    origin_priority = Get-OriginBoost -Origin $candidate.origin
     name = $candidate.name
     reason_hint = $candidate.short_description
     primary_domain = $candidate.primary_domain
@@ -105,13 +150,15 @@ $scored = foreach ($candidate in @($route.candidates)) {
   }
 }
 
-$top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, name | Select-Object -First $Limit)
+$top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | Select-Object -First $Limit)
 
 [pscustomobject]@{
   query = $Query
   route_type = $RouteType
   category = $Category
   route_count = $route.count
+  source_count = $(if ($route.PSObject.Properties.Name -contains "source_count") { $route.source_count } else { $route.count })
+  source_file = $routePath
   returned = $top.Count
   candidates = $top
 } | ConvertTo-Json -Depth 12

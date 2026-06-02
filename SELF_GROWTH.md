@@ -31,6 +31,10 @@ skill-selection-assistant/.skill-index/
 |   |-- primary-domain/
 |   |-- domain-detail/
 |   `-- task-type/
+|-- shortlists/
+|   |-- primary-domain/
+|   |-- domain-detail/
+|   `-- task-type/
 `-- selection-memory.md
 ```
 
@@ -46,6 +50,7 @@ The scanner keeps the real local skills untouched. Deduplication only changes th
 - `duplicates` records merged names, source paths, source origins, and distinct content counts.
 - `primary_domain` is the best single broad domain for fast selection.
 - `domain_detail` records weighted fine-grained labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, and `testing-debugging`.
+- Same-name skills with different content are preserved as separate variants instead of being forced into one representative candidate.
 
 Fine-grained domain detection is weighted. Skill name matches are strongest, frontmatter description matches are next, and body preview matches are weakest. This keeps generic template words from overwhelming the actual skill purpose.
 
@@ -53,22 +58,22 @@ Fine-grained domain detection is weighted. Skill name matches are strongest, fro
 
 To avoid wasting context on large local libraries, recommendation should not read all skill files.
 
-1. Infer the request category first.
-2. Read `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
-3. Pick one route file by `primary_domain`, `domain_detail`, or `task_type`.
-4. Prefer `scripts/select-route-candidates.ps1` to filter that route locally and return a small shortlist.
-5. Read only that route file's compact candidate metadata if the selector is unavailable.
+1. Run `scripts/infer-route.ps1` to infer the request category first.
+2. Prefer `scripts/select-route-candidates.ps1` to filter the inferred route locally.
+3. If scripts are unavailable, read `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
+4. Pick one shortlist file by `primary_domain`, `domain_detail`, or `task_type`.
+5. Read full route files only as fallback when a shortlist is missing or insufficient.
 6. Shortlist `1-3` candidates.
 7. Read candidate `SKILL.md` files only after shortlisting or after the user chooses.
 
-The full `skills-index.json` is a fallback and audit file. It should not be the default recommendation input.
+The full `skills-index.json` and full route files are fallback and audit files. They should not be the default recommendation input.
 
 ## Growth loop
 
 1. Scan the user's local skills root.
 2. Build or refresh the deduplicated classified skill index.
-3. Use the route summary to choose one category.
-4. Use the selector script or category route to recommend the best `1-3` skills.
+3. Use route inference to choose one category.
+4. Use the selector script or category shortlist to recommend the best `1-3` skills.
 5. Record useful matches and missed matches.
 6. Suggest new skills when repeated workflows are not covered.
 7. Suggest link, merge, or review actions when skills overlap.

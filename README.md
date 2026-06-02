@@ -80,16 +80,21 @@ skill-selection-assistant/.skill-index/
 |   |-- primary-domain/
 |   |-- domain-detail/
 |   `-- task-type/
+|-- shortlists/
+|   |-- primary-domain/
+|   |-- domain-detail/
+|   `-- task-type/
 `-- selection-memory.md
 ```
 
 The generated index is local to the installing user and is ignored by git.
 
-For token efficiency, `skills-index.json` is treated as a fallback and audit file. Normal recommendation should read `route-summary` first, choose one category, and then inspect only the matching route file.
+For token efficiency, `skills-index.json` and full route files are treated as fallback and audit files. Normal recommendation should infer one category, read only the matching shortlist, and then inspect only the top candidate skills.
 
-You can also ask the local selector to return a small shortlist from one route:
+You can infer a route and ask the local selector to return a small shortlist:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/infer-route.ps1 -Query "build a frontend UI"
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web -Limit 12
 ```
 
@@ -99,7 +104,7 @@ This skill is intended to make the whole local skill library self-growing:
 
 1. build a lightweight local skill catalog during install or update
 2. classify requests into a primary domain, fine-grained domain, and task type first
-3. read only the matching route file instead of reading every skill
+3. read only the matching shortlist instead of reading every skill or every route candidate
 4. send only the top candidate skills into the main routing step
 5. record useful and failed matches in local selection memory
 6. suggest new skills when repeated workflows are not covered
@@ -110,8 +115,8 @@ By itself, smarter in-model recommendation does not guarantee lower token usage 
 The intended default is route-first selection:
 
 1. infer category
-2. read `route-summary`
-3. run `select-route-candidates.ps1` or read one route file
+2. run `select-route-candidates.ps1` against the inferred category
+3. read `route-summary` and one shortlist only if scripts are unavailable
 4. recommend `1-3` skills
 5. read actual `SKILL.md` files only after shortlisting or user choice
 
@@ -174,6 +179,7 @@ skill-selection-assistant/
 `-- skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
+    |   |-- infer-route.ps1
     |   |-- scan-local-skills.ps1
     |   `-- select-route-candidates.ps1
     `-- agents/
@@ -232,7 +238,9 @@ Before answering each new normal request:
 You can edit:
 
 - `skill-selection-assistant/SKILL.md` to change the routing behavior and wording
+- `skill-selection-assistant/scripts/infer-route.ps1` to adjust request-to-category inference
 - `skill-selection-assistant/scripts/scan-local-skills.ps1` to adjust portable scanning and classification
+- `skill-selection-assistant/scripts/select-route-candidates.ps1` to adjust shortlist ranking
 - `skill-selection-assistant/agents/openai.yaml` to change agent metadata and default prompt behavior
 - `INSTALLATION_BEHAVIOR.md` to document portable indexing or install/update behavior
 - `SELF_GROWTH.md` to document self-growing library policies

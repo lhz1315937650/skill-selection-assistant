@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.2 - 2026-06-02
+
+- added `scripts/infer-route.ps1` to infer the best route category before candidate selection
+- added generated `.skill-index/shortlists/` files so normal routing can read small category shortlists instead of full route files
+- changed `select-route-candidates.ps1` to prefer shortlist files by default and use full routes only as an explicit fallback
+- preserved same-name skills with different content as separate variants instead of force-merging them into one representative
+- documented the new infer-route -> select-candidates -> read-candidate-skill workflow
+
 ## v1.5.1 - 2026-06-02
 
 - added route-first skill selection to avoid reading the full local skill index by default

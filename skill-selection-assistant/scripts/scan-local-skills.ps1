@@ -267,11 +267,46 @@ function New-RouteEntry {
     setup_level = $Skill.setup_level
     origin = $Skill.origin
     duplicate_count = $Skill.duplicate_count
+    duplicate_name_count = $Skill.duplicate_name_count
     distinct_content_count = $Skill.distinct_content_count
+    variant_id = $Skill.variant_id
+    variant_index = $Skill.variant_index
+    variant_count = $Skill.variant_count
+    dedupe_status = $Skill.dedupe_status
     relative_path = $Skill.relative_path
     skill_md = $Skill.skill_md
     short_description = Get-ShortText -Text $descriptionText
   }
+}
+
+function Get-RoutePriority {
+  param([object]$Entry)
+
+  $score = 0
+  switch ($Entry.origin) {
+    "user-local" { $score += 50 }
+    "official-system" { $score += 40 }
+    "installed-topic" { $score += 35 }
+    "linked-external" { $score += 10 }
+    default { $score += 0 }
+  }
+
+  switch ($Entry.setup_level) {
+    "none" { $score += 10 }
+    "local-runtime" { $score += 8 }
+    "account" { $score += 4 }
+    "network" { $score += 2 }
+    default { $score += 0 }
+  }
+
+  if ([int]$Entry.duplicate_count -gt 1) {
+    $score += [Math]::Min([int]$Entry.duplicate_count, 6)
+  }
+  if ([int]$Entry.distinct_content_count -gt 1) {
+    $score += 3
+  }
+
+  return $score
 }
 
 $skillsRootResolved = Resolve-SkillsRoot -ExplicitRoot $SkillsRoot
@@ -352,53 +387,76 @@ $items = @()
 $duplicateGroups = @()
 
 $rawItems | Group-Object canonical_name | ForEach-Object {
-  $group = @($_.Group)
-  $representative = $group | Sort-Object origin_rank, setup_rank, @{ Expression = "last_write_ticks"; Descending = $true } | Select-Object -First 1
+  $nameGroup = @($_.Group)
+  $nameRepresentative = $nameGroup | Sort-Object origin_rank, setup_rank, @{ Expression = "last_write_ticks"; Descending = $true } | Select-Object -First 1
+  $nameSourcePaths = Join-UniqueValues -Values ($nameGroup | ForEach-Object { $_.relative_path })
+  $nameSourceOrigins = Join-UniqueValues -Values ($nameGroup | ForEach-Object { $_.origin })
+  $nameContentHashes = Join-UniqueValues -Values ($nameGroup | ForEach-Object { $_.content_hash })
+  $contentGroups = @($nameGroup | Group-Object content_hash | Sort-Object Name)
+  $variantCount = $contentGroups.Count
 
-  $sourcePaths = Join-UniqueValues -Values ($group | ForEach-Object { $_.relative_path })
-  $sourceSkillFiles = Join-UniqueValues -Values ($group | ForEach-Object { $_.skill_md })
-  $sourceOrigins = Join-UniqueValues -Values ($group | ForEach-Object { $_.origin })
-  $domains = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain })
-  $domainDetails = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain_detail })
-  $taskTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.task_type })
-  $outputTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.output_type })
-  $contentHashes = Join-UniqueValues -Values ($group | ForEach-Object { $_.content_hash })
-
-  if ($group.Count -gt 1) {
+  if ($nameGroup.Count -gt 1) {
     $duplicateGroups += [pscustomobject]@{
-      name = $representative.name
-      canonical_name = $representative.canonical_name
-      duplicate_count = $group.Count
-      distinct_content_count = $contentHashes.Count
-      source_origins = $sourceOrigins
-      source_paths = $sourcePaths
+      name = $nameRepresentative.name
+      canonical_name = $nameRepresentative.canonical_name
+      duplicate_count = $nameGroup.Count
+      distinct_content_count = $variantCount
+      source_origins = $nameSourceOrigins
+      source_paths = $nameSourcePaths
     }
   }
 
-  $items += [pscustomobject]@{
-    name = $representative.name
-    canonical_name = $representative.canonical_name
-    folder = $representative.folder
-    relative_path = $representative.relative_path
-    skill_md = $representative.skill_md
-    origin = $representative.origin
-    source_origins = $sourceOrigins
-    source_paths = $sourcePaths
-    source_skill_md = $sourceSkillFiles
-    duplicate_count = $group.Count
-    distinct_content_count = $contentHashes.Count
-    dedupe_status = $(if ($group.Count -gt 1) { "merged" } else { "unique" })
-    domain = $domains
-    primary_domain = Get-PrimaryDomain -Details $domainDetails -Domains $domains
-    domain_detail = $domainDetails
-    task_type = $taskTypes
-    output_type = $outputTypes
-    setup_level = $representative.setup_level
-    status = "active"
-    description = $representative.description
-    short_description = $representative.short_description
-    content_hashes = $contentHashes
-    last_write_time = $representative.last_write_time
+  $variantIndex = 0
+  foreach ($contentGroupInfo in $contentGroups) {
+    $variantIndex++
+    $group = @($contentGroupInfo.Group)
+    $representative = $group | Sort-Object origin_rank, setup_rank, @{ Expression = "last_write_ticks"; Descending = $true } | Select-Object -First 1
+
+    $sourcePaths = Join-UniqueValues -Values ($group | ForEach-Object { $_.relative_path })
+    $sourceSkillFiles = Join-UniqueValues -Values ($group | ForEach-Object { $_.skill_md })
+    $sourceOrigins = Join-UniqueValues -Values ($group | ForEach-Object { $_.origin })
+    $domains = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain })
+    $domainDetails = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain_detail })
+    $taskTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.task_type })
+    $outputTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.output_type })
+    $contentHash = $representative.content_hash
+    $variantId = $representative.canonical_name + ":" + $contentHash.Substring(0, 12)
+
+    $dedupeStatus = "unique"
+    if ($variantCount -gt 1) { $dedupeStatus = "variant" }
+    elseif ($group.Count -gt 1) { $dedupeStatus = "merged" }
+
+    $items += [pscustomobject]@{
+      name = $representative.name
+      canonical_name = $representative.canonical_name
+      folder = $representative.folder
+      relative_path = $representative.relative_path
+      skill_md = $representative.skill_md
+      origin = $representative.origin
+      source_origins = $sourceOrigins
+      source_paths = $sourcePaths
+      source_skill_md = $sourceSkillFiles
+      same_name_source_paths = $nameSourcePaths
+      duplicate_count = $group.Count
+      duplicate_name_count = $nameGroup.Count
+      distinct_content_count = $variantCount
+      variant_id = $variantId
+      variant_index = $variantIndex
+      variant_count = $variantCount
+      dedupe_status = $dedupeStatus
+      domain = $domains
+      primary_domain = Get-PrimaryDomain -Details $domainDetails -Domains $domains
+      domain_detail = $domainDetails
+      task_type = $taskTypes
+      output_type = $outputTypes
+      setup_level = $representative.setup_level
+      status = "active"
+      description = $representative.description
+      short_description = $representative.short_description
+      content_hashes = @($contentHash)
+      same_name_content_hashes = $nameContentHashes
+      last_write_time = $representative.last_write_time
+    }
   }
 }
 
@@ -422,7 +480,12 @@ $routesDir = Join-Path $OutputDir "routes"
 $primaryRoutesDir = Join-Path $routesDir "primary-domain"
 $detailRoutesDir = Join-Path $routesDir "domain-detail"
 $taskRoutesDir = Join-Path $routesDir "task-type"
-New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir | Out-Null
+$shortlistsDir = Join-Path $OutputDir "shortlists"
+$primaryShortlistsDir = Join-Path $shortlistsDir "primary-domain"
+$detailShortlistsDir = Join-Path $shortlistsDir "domain-detail"
+$taskShortlistsDir = Join-Path $shortlistsDir "task-type"
+New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir, $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
+$ShortlistLimit = 200
 
 $routeSummary = [ordered]@{
   generated_at = $index.generated_at
@@ -431,7 +494,7 @@ $routeSummary = [ordered]@{
   total = $items.Count
   duplicate_groups = $duplicateGroups.Count
   duplicates_removed = ($rawItems.Count - $items.Count)
-  route_rule = "Read this summary first, choose one primary_domain/domain_detail/task_type, then read only the matching route file before reading candidate SKILL.md files."
+  route_rule = "Read this summary first, choose one primary_domain/domain_detail/task_type, then read the matching shortlist before reading full route files or candidate SKILL.md files."
   primary_domain = @()
   domain_detail = @()
   task_type = @()
@@ -443,7 +506,8 @@ $routeSummaryLines.Add("")
 $routeSummaryLines.Add("- Generated: " + $index.generated_at)
 $routeSummaryLines.Add("- Raw skills: " + $rawItems.Count)
 $routeSummaryLines.Add("- Deduplicated skills: " + $items.Count)
-$routeSummaryLines.Add("- Rule: determine category first, then read only the matching route file.")
+$routeSummaryLines.Add("- Shortlist limit per route: " + $ShortlistLimit)
+$routeSummaryLines.Add("- Rule: determine category first, then read only the matching shortlist file.")
 $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Primary Domain Routes")
@@ -461,8 +525,20 @@ $items | Group-Object primary_domain | Sort-Object Count -Descending | ForEach-O
   }
   $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
   $relativeRoutePath = "routes/primary-domain/" + $fileName
-  $routeSummary.primary_domain += [pscustomobject]@{ name = $_.Name; count = $_.Count; file = $relativeRoutePath }
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`' -f $_.Name, $_.Count, $relativeRoutePath))
+  $shortlistPath = Join-Path $primaryShortlistsDir $fileName
+  $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
+  $shortlistObject = [pscustomobject]@{
+    generated_at = $index.generated_at
+    route_type = "primary_domain"
+    category = $_.Name
+    source_count = $entries.Count
+    count = $shortlistEntries.Count
+    candidates = $shortlistEntries
+  }
+  $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
+  $relativeShortlistPath = "shortlists/primary-domain/" + $fileName
+  $routeSummary.primary_domain += [pscustomobject]@{ name = $_.Name; count = $_.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
+  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.Name, $_.Count, $relativeRoutePath, $relativeShortlistPath, $shortlistEntries.Count))
 }
 $routeSummaryLines.Add("")
 
@@ -483,11 +559,23 @@ foreach ($detail in $detailValues) {
   }
   $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
   $relativeRoutePath = "routes/domain-detail/" + $fileName
-  $routeSummary.domain_detail += [pscustomobject]@{ name = $detail; count = $entries.Count; file = $relativeRoutePath }
+  $shortlistPath = Join-Path $detailShortlistsDir $fileName
+  $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
+  $shortlistObject = [pscustomobject]@{
+    generated_at = $index.generated_at
+    route_type = "domain_detail"
+    category = $detail
+    source_count = $entries.Count
+    count = $shortlistEntries.Count
+    candidates = $shortlistEntries
+  }
+  $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
+  $relativeShortlistPath = "shortlists/domain-detail/" + $fileName
+  $routeSummary.domain_detail += [pscustomobject]@{ name = $detail; count = $entries.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
 }
 $routeSummary.domain_detail = @($routeSummary.domain_detail | Sort-Object @{ Expression = "count"; Descending = $true }, name)
 $routeSummary.domain_detail | ForEach-Object {
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`' -f $_.name, $_.count, $_.file))
+  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $_.file, $_.shortlist_file, $_.shortlist_count))
 }
 $routeSummaryLines.Add("")
 
@@ -508,11 +596,23 @@ foreach ($task in $taskValues) {
   }
   $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
   $relativeRoutePath = "routes/task-type/" + $fileName
-  $routeSummary.task_type += [pscustomobject]@{ name = $task; count = $entries.Count; file = $relativeRoutePath }
+  $shortlistPath = Join-Path $taskShortlistsDir $fileName
+  $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
+  $shortlistObject = [pscustomobject]@{
+    generated_at = $index.generated_at
+    route_type = "task_type"
+    category = $task
+    source_count = $entries.Count
+    count = $shortlistEntries.Count
+    candidates = $shortlistEntries
+  }
+  $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
+  $relativeShortlistPath = "shortlists/task-type/" + $fileName
+  $routeSummary.task_type += [pscustomobject]@{ name = $task; count = $entries.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
 }
 $routeSummary.task_type = @($routeSummary.task_type | Sort-Object @{ Expression = "count"; Descending = $true }, name)
 $routeSummary.task_type | ForEach-Object {
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`' -f $_.name, $_.count, $_.file))
+  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $_.file, $_.shortlist_file, $_.shortlist_count))
 }
 $routeSummaryLines.Add("")
 
@@ -579,4 +679,5 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   Categories = Join-Path $OutputDir "skills-categories.md"
   RouteSummary = Join-Path $OutputDir "route-summary.json"
   RoutesDir = $routesDir
+  ShortlistsDir = $shortlistsDir
 }

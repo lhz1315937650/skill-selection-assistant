@@ -211,7 +211,8 @@ The scanner should:
 5. Write `.skill-index/skills-categories.md`.
 6. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
 7. Write category-specific route files under `.skill-index/routes/`.
-8. Write or preserve `.skill-index/selection-memory.md`.
+8. Write category-specific shortlist files under `.skill-index/shortlists/`.
+9. Write or preserve `.skill-index/selection-memory.md`.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 
@@ -221,18 +222,19 @@ The generated index is a recommendation view, not a destructive filesystem opera
 
 Do not read every local skill before recommendation. Always use a route-first workflow:
 
-1. Understand the user's request and infer the likely `primary_domain`, `domain_detail`, and `task_type`.
-2. Read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
-3. Choose the most relevant route file from `.skill-index/routes/primary-domain/`, `.skill-index/routes/domain-detail/`, or `.skill-index/routes/task-type/`.
-4. Prefer running `scripts/select-route-candidates.ps1` with the chosen route and user request so only a small shortlist enters the conversation.
-5. If the selector script is unavailable, read only the chosen route file to get compact candidate metadata.
-6. Shortlist the best `1-3` candidates from the selector output or route file.
+1. Run `scripts/infer-route.ps1` with the user's request to infer the likely `primary_domain`, `domain_detail`, and `task_type`.
+2. Run `scripts/select-route-candidates.ps1` with the inferred route so only a small shortlist enters the conversation.
+3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
+4. Choose the most relevant shortlist from `.skill-index/shortlists/primary-domain/`, `.skill-index/shortlists/domain-detail/`, or `.skill-index/shortlists/task-type/`.
+5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient.
+6. Shortlist the best `1-3` candidates from selector output or shortlist metadata.
 7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
 8. Never load the full `.skill-index/skills-index.json` unless route files are missing, stale, or insufficient.
 
 Selector command pattern:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web -Limit 12
 ```
 
@@ -251,6 +253,8 @@ Classify each local skill using:
 - `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
 - `status`: `active`, `needs-review`, `deprecated`, or `unknown`
 - `duplicate_count`: how many same-name local entries were merged into this recommendation candidate
+- `duplicate_name_count`: how many local entries shared this skill name before variant-aware deduplication
+- `variant_id`, `variant_index`, and `variant_count`: preserve same-name skills with different content as separate variants
 - `source_paths`: all local source paths represented by the merged candidate
 
 For domain detection, prefer strong signals from the skill name, then frontmatter descriptions, then body previews. Use these categories internally for selection. Do not expose a long taxonomy to the user unless they ask.
@@ -261,10 +265,10 @@ At the beginning of a normal project conversation:
 
 1. Detect the user's language.
 2. Summarize the current request internally.
-3. Infer the best category before reading skill bodies.
-4. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
-5. Run `scripts/select-route-candidates.ps1` for the inferred category when available.
-6. Read only the matching route file if the selector is unavailable.
+3. Run `scripts/infer-route.ps1` to infer the best category before reading skill bodies when available.
+4. Run `scripts/select-route-candidates.ps1` for the inferred category when available.
+5. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json` only if route inference is unavailable.
+6. Read only the matching shortlist file if the selector is unavailable.
 7. Match compact route candidates by semantic fit, not only keywords.
 8. Prefer exact workflow fit, `primary_domain`, and `domain_detail` over broad keyword overlap.
 9. Recommend only `1-3` skills.
