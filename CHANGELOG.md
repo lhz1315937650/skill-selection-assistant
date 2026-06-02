@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.5 - 2026-06-02
+
+- added `.skill-index/manifest.json` to cache parsed skill metadata and reuse unchanged `SKILL.md` files on later scans
+- made recommendations merge same-name variants by default while preserving variant details internally
+- documented manifest-backed rescanning and same-name variant display behavior
+- extended smoke tests to verify default variant merging in recommendation output
+
 ## v1.5.4 - 2026-06-02
 
 - added a dependency-free PowerShell smoke test suite under `tests/`

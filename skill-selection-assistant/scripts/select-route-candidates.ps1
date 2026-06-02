@@ -10,7 +10,8 @@ param(
 
   [int]$Limit = 12,
   [string]$IndexDir = "",
-  [switch]$UseFullRoute
+  [switch]$UseFullRoute,
+  [switch]$KeepVariants
 )
 
 $ErrorActionPreference = "Stop"
@@ -138,6 +139,7 @@ $scored = foreach ($candidate in @($route.candidates)) {
     score = $score
     origin_priority = Get-OriginBoost -Origin $candidate.origin
     name = $candidate.name
+    canonical_name = $(if ($candidate.PSObject.Properties.Name -contains "canonical_name") { $candidate.canonical_name } else { $candidate.name.ToLowerInvariant() })
     reason_hint = $candidate.short_description
     primary_domain = $candidate.primary_domain
     domain_detail = $candidate.domain_detail
@@ -150,6 +152,27 @@ $scored = foreach ($candidate in @($route.candidates)) {
   }
 }
 
+if (-not $KeepVariants) {
+  $merged = @()
+  $scored | Group-Object canonical_name | ForEach-Object {
+    $group = @($_.Group)
+    $best = $group | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | Select-Object -First 1
+    $best | Add-Member -NotePropertyName merged_variant_count -NotePropertyValue $group.Count -Force
+    $best | Add-Member -NotePropertyName variants -NotePropertyValue @($group | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | ForEach-Object {
+      [pscustomobject]@{
+        score = $_.score
+        name = $_.name
+        origin = $_.origin
+        setup_level = $_.setup_level
+        relative_path = $_.relative_path
+        skill_md = $_.skill_md
+      }
+    }) -Force
+    $merged += $best
+  }
+  $scored = $merged
+}
+
 $top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | Select-Object -First $Limit)
 
 [pscustomobject]@{
@@ -159,6 +182,7 @@ $top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{
   route_count = $route.count
   source_count = $(if ($route.PSObject.Properties.Name -contains "source_count") { $route.source_count } else { $route.count })
   source_file = $routePath
+  merged_variants = (-not $KeepVariants)
   returned = $top.Count
   candidates = $top
 } | ConvertTo-Json -Depth 12

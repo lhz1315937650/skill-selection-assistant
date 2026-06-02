@@ -73,6 +73,7 @@ It scans the user's own local Codex skills root and writes:
 ```text
 skill-selection-assistant/.skill-index/
 |-- skills-index.json
+|-- manifest.json
 |-- skills-categories.md
 |-- route-summary.json
 |-- route-summary.md
@@ -90,6 +91,8 @@ skill-selection-assistant/.skill-index/
 The generated index is local to the installing user and is ignored by git.
 
 For token efficiency, `skills-index.json` and full route files are treated as fallback and audit files. Normal recommendation should infer one category, read only the matching shortlist, and then inspect only the top candidate skills.
+
+`manifest.json` caches parsed skill metadata. Re-running the scanner can reuse unchanged `SKILL.md` files when the script version, file size, and modified time match.
 
 You can ask the one-command recommender to infer a route and return a small shortlist:
 
@@ -220,8 +223,10 @@ powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 The smoke test uses a tiny fixture skill library and verifies:
 
 - local scanning and index generation
+- manifest-backed rescanning
 - exact duplicate merging
 - same-name different-content variant preservation
+- default same-name variant merging in recommendations
 - stale route and shortlist cleanup on rescan
 - route inference for frontend and academic requests
 - one-command recommendation through `recommend-skills.ps1`

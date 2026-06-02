@@ -260,6 +260,7 @@ function New-RouteEntry {
 
   return [pscustomobject]@{
     name = $Skill.name
+    canonical_name = $Skill.canonical_name
     primary_domain = $Skill.primary_domain
     domain_detail = $Skill.domain_detail
     task_type = $Skill.task_type
@@ -315,6 +316,24 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+$ScannerVersion = "1.5.5"
+$manifestPath = Join-Path $OutputDir "manifest.json"
+$previousManifestByPath = @{}
+if (Test-Path -LiteralPath $manifestPath) {
+  try {
+    $previousManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($previousManifest.scanner_version -eq $ScannerVersion) {
+      foreach ($entry in @($previousManifest.files)) {
+        if ($entry.skill_md) {
+          $previousManifestByPath[[string]$entry.skill_md] = $entry
+        }
+      }
+    }
+  }
+  catch {
+    $previousManifestByPath = @{}
+  }
+}
 
 $recursiveSkillFiles = Get-ChildItem -LiteralPath $skillsRootResolved -Filter "SKILL.md" -Recurse -Force -ErrorAction SilentlyContinue
 $topLevelSkillFiles = Get-ChildItem -LiteralPath $skillsRootResolved -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
@@ -327,6 +346,19 @@ $skillFiles = @($recursiveSkillFiles + $topLevelSkillFiles) | Sort-Object FullNa
 $rawItems = @()
 
 foreach ($file in $skillFiles) {
+  $cached = $null
+  if ($previousManifestByPath.ContainsKey($file.FullName)) {
+    $previousEntry = $previousManifestByPath[$file.FullName]
+    if (([int64]$previousEntry.file_length -eq [int64]$file.Length) -and ([int64]$previousEntry.last_write_ticks -eq [int64]$file.LastWriteTime.Ticks)) {
+      $cached = $previousEntry.item
+    }
+  }
+
+  if ($cached) {
+    $rawItems += $cached
+    continue
+  }
+
   $dir = Split-Path -Parent $file.FullName
   $dirItem = Get-Item -LiteralPath $dir
   $relative = $dir.Substring($skillsRootResolved.Length).TrimStart([char[]]@('\', '/'))
@@ -378,10 +410,30 @@ foreach ($file in $skillFiles) {
     description = $description
     short_description = $short
     content_hash = Get-ContentHash -Text $content
+    file_length = $file.Length
     last_write_time = $file.LastWriteTime.ToString("s")
     last_write_ticks = $file.LastWriteTime.Ticks
   }
 }
+
+$manifestFiles = @($rawItems | ForEach-Object {
+  [pscustomobject]@{
+    skill_md = $_.skill_md
+    relative_path = $_.relative_path
+    file_length = $_.file_length
+    last_write_ticks = $_.last_write_ticks
+    item = $_
+  }
+})
+
+$manifest = [pscustomobject]@{
+  generated_at = (Get-Date).ToString("s")
+  scanner_version = $ScannerVersion
+  skills_root = $skillsRootResolved
+  total = $manifestFiles.Count
+  files = $manifestFiles
+}
+$manifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
 $items = @()
 $duplicateGroups = @()
@@ -687,6 +739,7 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   DuplicateGroups = $duplicateGroups.Count
   DuplicatesRemoved = ($rawItems.Count - $items.Count)
   Index = Join-Path $OutputDir "skills-index.json"
+  Manifest = $manifestPath
   Categories = Join-Path $OutputDir "skills-categories.md"
   RouteSummary = Join-Path $OutputDir "route-summary.json"
   RoutesDir = $routesDir

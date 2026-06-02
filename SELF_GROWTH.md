@@ -24,6 +24,7 @@ The scanner writes local runtime artifacts to:
 ```text
 skill-selection-assistant/.skill-index/
 |-- skills-index.json
+|-- manifest.json
 |-- skills-categories.md
 |-- route-summary.json
 |-- route-summary.md
@@ -48,9 +49,11 @@ The scanner keeps the real local skills untouched. Deduplication only changes th
 - `total` records the deduplicated recommendation candidates.
 - `duplicates_removed` records how many duplicate entries were merged out of the index view.
 - `duplicates` records merged names, source paths, source origins, and distinct content counts.
+- `manifest.json` caches parsed skill metadata so unchanged files can be reused on later scans.
 - `primary_domain` is the best single broad domain for fast selection.
 - `domain_detail` records weighted fine-grained labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, and `testing-debugging`.
 - Same-name skills with different content are preserved as separate variants instead of being forced into one representative candidate.
+- Recommendation output merges same-name variants by default for readability while preserving variant details internally.
 
 Fine-grained domain detection is weighted. Skill name matches are strongest, frontmatter description matches are next, and body preview matches are weakest. This keeps generic template words from overwhelming the actual skill purpose.
 

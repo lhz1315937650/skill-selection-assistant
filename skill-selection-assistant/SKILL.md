@@ -208,11 +208,12 @@ The scanner should:
 2. Read each `SKILL.md` frontmatter and lightweight body preview.
 3. Classify each skill into weighted multi-level categories.
 4. Write `.skill-index/skills-index.json`.
-5. Write `.skill-index/skills-categories.md`.
-6. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
-7. Write category-specific route files under `.skill-index/routes/`.
-8. Write category-specific shortlist files under `.skill-index/shortlists/`.
-9. Write or preserve `.skill-index/selection-memory.md`.
+5. Write `.skill-index/manifest.json` for unchanged-file scan reuse.
+6. Write `.skill-index/skills-categories.md`.
+7. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
+8. Write category-specific route files under `.skill-index/routes/`.
+9. Write category-specific shortlist files under `.skill-index/shortlists/`.
+10. Write or preserve `.skill-index/selection-memory.md`.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 
@@ -259,6 +260,8 @@ Classify each local skill using:
 - `source_paths`: all local source paths represented by the merged candidate
 
 For domain detection, prefer strong signals from the skill name, then frontmatter descriptions, then body previews. Use these categories internally for selection. Do not expose a long taxonomy to the user unless they ask.
+
+When recommending skills to the user, merge same-name variants into one visible recommendation by default. Keep variant details internally and surface them only when they materially change the choice or the user asks.
 
 ## Selection Workflow In A Project Conversation
 

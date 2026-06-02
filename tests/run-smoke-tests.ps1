@@ -66,6 +66,7 @@ try {
   Assert-True ($recommendation.selection.source_file -like "*shortlists*") "recommendation should read from shortlist"
   Assert-True ([int]$recommendation.selection.returned -gt 0) "recommendation should return candidates"
   Assert-True ($recommendation.selection.candidates[0].name -eq "frontend-design") "frontend-design should be first for frontend UI query"
+  Assert-True ($recommendation.selection.merged_variants -eq $true) "recommendation should merge same-name variants by default"
 
   [pscustomobject]@{
     Status = "passed"

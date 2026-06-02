@@ -44,6 +44,7 @@ $selection = (& $selectScript -Query $Query -RouteType $route.route_type -Catego
   selection = [pscustomobject]@{
     source_file = $selection.source_file
     source_count = $selection.source_count
+    merged_variants = $selection.merged_variants
     returned = $selection.returned
     candidates = $selection.candidates
   }
