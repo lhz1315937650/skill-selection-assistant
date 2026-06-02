@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.3 - 2026-06-02
+
+- added `scripts/recommend-skills.ps1` as a one-command route inference and candidate selection wrapper
+- made normal recommendation easier to invoke without manually passing inferred route parameters
+- added safe cleanup of generated `.skill-index/routes/` and `.skill-index/shortlists/` before rescanning to avoid stale route files
+- documented the one-command recommender as the preferred token-saving entry point
+
 ## v1.5.2 - 2026-06-02
 
 - added `scripts/infer-route.ps1` to infer the best route category before candidate selection

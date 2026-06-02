@@ -484,6 +484,17 @@ $shortlistsDir = Join-Path $OutputDir "shortlists"
 $primaryShortlistsDir = Join-Path $shortlistsDir "primary-domain"
 $detailShortlistsDir = Join-Path $shortlistsDir "domain-detail"
 $taskShortlistsDir = Join-Path $shortlistsDir "task-type"
+
+$outputRoot = (Resolve-Path -LiteralPath $OutputDir).Path
+foreach ($generatedDir in @($routesDir, $shortlistsDir)) {
+  if (Test-Path -LiteralPath $generatedDir) {
+    $resolvedGeneratedDir = (Resolve-Path -LiteralPath $generatedDir).Path
+    if ($resolvedGeneratedDir.StartsWith($outputRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+      Remove-Item -LiteralPath $resolvedGeneratedDir -Recurse -Force
+    }
+  }
+}
+
 New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir, $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
 $ShortlistLimit = 200
 

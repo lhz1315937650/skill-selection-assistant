@@ -91,9 +91,10 @@ The generated index is local to the installing user and is ignored by git.
 
 For token efficiency, `skills-index.json` and full route files are treated as fallback and audit files. Normal recommendation should infer one category, read only the matching shortlist, and then inspect only the top candidate skills.
 
-You can infer a route and ask the local selector to return a small shortlist:
+You can ask the one-command recommender to infer a route and return a small shortlist:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "build a frontend UI" -Limit 3
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/infer-route.ps1 -Query "build a frontend UI"
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web -Limit 12
 ```
@@ -115,7 +116,7 @@ By itself, smarter in-model recommendation does not guarantee lower token usage 
 The intended default is route-first selection:
 
 1. infer category
-2. run `select-route-candidates.ps1` against the inferred category
+2. run `recommend-skills.ps1`, or run `select-route-candidates.ps1` against the inferred category
 3. read `route-summary` and one shortlist only if scripts are unavailable
 4. recommend `1-3` skills
 5. read actual `SKILL.md` files only after shortlisting or user choice
@@ -180,6 +181,7 @@ skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
     |   |-- infer-route.ps1
+    |   |-- recommend-skills.ps1
     |   |-- scan-local-skills.ps1
     |   `-- select-route-candidates.ps1
     `-- agents/
@@ -239,6 +241,7 @@ You can edit:
 
 - `skill-selection-assistant/SKILL.md` to change the routing behavior and wording
 - `skill-selection-assistant/scripts/infer-route.ps1` to adjust request-to-category inference
+- `skill-selection-assistant/scripts/recommend-skills.ps1` to adjust the one-command recommendation wrapper
 - `skill-selection-assistant/scripts/scan-local-skills.ps1` to adjust portable scanning and classification
 - `skill-selection-assistant/scripts/select-route-candidates.ps1` to adjust shortlist ranking
 - `skill-selection-assistant/agents/openai.yaml` to change agent metadata and default prompt behavior

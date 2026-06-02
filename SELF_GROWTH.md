@@ -58,8 +58,8 @@ Fine-grained domain detection is weighted. Skill name matches are strongest, fro
 
 To avoid wasting context on large local libraries, recommendation should not read all skill files.
 
-1. Run `scripts/infer-route.ps1` to infer the request category first.
-2. Prefer `scripts/select-route-candidates.ps1` to filter the inferred route locally.
+1. Prefer `scripts/recommend-skills.ps1` to infer the request category and filter candidates in one local step.
+2. If the wrapper is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
 3. If scripts are unavailable, read `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
 4. Pick one shortlist file by `primary_domain`, `domain_detail`, or `task_type`.
 5. Read full route files only as fallback when a shortlist is missing or insufficient.
@@ -72,7 +72,7 @@ The full `skills-index.json` and full route files are fallback and audit files. 
 
 1. Scan the user's local skills root.
 2. Build or refresh the deduplicated classified skill index.
-3. Use route inference to choose one category.
+3. Use the recommender or route inference to choose one category.
 4. Use the selector script or category shortlist to recommend the best `1-3` skills.
 5. Record useful matches and missed matches.
 6. Suggest new skills when repeated workflows are not covered.

@@ -222,8 +222,8 @@ The generated index is a recommendation view, not a destructive filesystem opera
 
 Do not read every local skill before recommendation. Always use a route-first workflow:
 
-1. Run `scripts/infer-route.ps1` with the user's request to infer the likely `primary_domain`, `domain_detail`, and `task_type`.
-2. Run `scripts/select-route-candidates.ps1` with the inferred route so only a small shortlist enters the conversation.
+1. Prefer running `scripts/recommend-skills.ps1` with the user's request; it performs route inference and candidate selection in one compact step.
+2. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
 3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
 4. Choose the most relevant shortlist from `.skill-index/shortlists/primary-domain/`, `.skill-index/shortlists/domain-detail/`, or `.skill-index/shortlists/task-type/`.
 5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient.
@@ -234,6 +234,7 @@ Do not read every local skill before recommendation. Always use a route-first wo
 Selector command pattern:
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>" -Limit 3
 powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web -Limit 12
 ```
@@ -265,8 +266,8 @@ At the beginning of a normal project conversation:
 
 1. Detect the user's language.
 2. Summarize the current request internally.
-3. Run `scripts/infer-route.ps1` to infer the best category before reading skill bodies when available.
-4. Run `scripts/select-route-candidates.ps1` for the inferred category when available.
+3. Run `scripts/recommend-skills.ps1` when available.
+4. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and `scripts/select-route-candidates.ps1`.
 5. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json` only if route inference is unavailable.
 6. Read only the matching shortlist file if the selector is unavailable.
 7. Match compact route candidates by semantic fit, not only keywords.
