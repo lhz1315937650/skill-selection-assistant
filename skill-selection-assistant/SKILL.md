@@ -14,15 +14,17 @@ Use this skill at the beginning of a request when Codex should decide which loca
 Before solving the user's request:
 
 1. Inspect local skills under the user's Codex skills directory.
-2. Find the smallest useful set of relevant skills.
-3. Prefer the best `1-3` skills instead of dumping a long list.
-4. Introduce the matched skills in the same language the user used for the request.
-5. Ask the user which skill they want to use.
-6. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
-7. If a selected skill needs user-specific prerequisite configuration, ask the required setup questions before execution.
-8. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
-9. After the user chooses a skill for the current conversation, keep using that active skill on later turns unless the work clearly needs a different skill.
-10. Ask the user to choose again only when a later turn clearly introduces a different skill with a meaningfully different workflow, setup, or output.
+2. On install, update, or first use, scan and classify local skills into a lightweight multi-level index.
+3. Find the smallest useful set of relevant skills.
+4. Prefer the best `1-3` skills instead of dumping a long list.
+5. Introduce the matched skills in the same language the user used for the request.
+6. Ask the user which skill they want to use.
+7. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
+8. If a selected skill needs user-specific prerequisite configuration, ask the required setup questions before execution.
+9. Continue only after the user chooses a skill, explicitly says to answer directly, or explicitly says not to use a skill.
+10. After the user chooses a skill for the current conversation, keep using that active skill on later turns unless the work clearly needs a different skill.
+11. Ask the user to choose again only when a later turn clearly introduces a different skill with a meaningfully different workflow, setup, or output.
+12. Maintain a self-growing local skill library by recording recurring intents, missed matches, overlapping skills, and new skill opportunities.
 
 ## Portability Rule
 
@@ -189,6 +191,89 @@ The intended portable rule is:
 4. use that catalog for future prefiltering
 
 Do not describe or implement offline indexing as scanning a hardcoded personal development path.
+
+## Install-Time And First-Use Indexing
+
+When this skill is installed, updated, or used in a fresh environment, build a local skill index before recommending skills.
+
+Preferred command:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/scan-local-skills.ps1
+```
+
+The scanner should:
+
+1. Locate the user's local skills root.
+2. Read each `SKILL.md` frontmatter and lightweight body preview.
+3. Classify each skill into multi-level categories.
+4. Write `.skill-index/skills-index.json`.
+5. Write `.skill-index/skills-categories.md`.
+6. Write or preserve `.skill-index/selection-memory.md`.
+
+If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
+
+## Multi-Level Classification
+
+Classify each local skill using:
+
+- `origin`: `user-local`, `official-system`, `installed-topic`, `linked-external`, or `unknown`
+- `domain`: broad area such as `writing`, `research`, `coding`, `data`, `design`, `documents`, `automation`, `publishing`, `safety`, or `general`
+- `task_type`: practical action such as `summarize`, `review`, `generate`, `transform`, `test-debug`, `extract`, `publish`, `plan`, or `analyze`
+- `output_type`: likely output such as `markdown`, `image`, `pptx`, `docx`, `xlsx`, `html`, `code`, `report`, or `workflow`
+- `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
+- `status`: `active`, `needs-review`, `deprecated`, or `unknown`
+
+Use these categories internally for selection. Do not expose a long taxonomy to the user unless they ask.
+
+## Selection Workflow In A Project Conversation
+
+At the beginning of a normal project conversation:
+
+1. Detect the user's language.
+2. Summarize the current request internally.
+3. Load `.skill-index/skills-index.json` if available.
+4. Match skills by semantic fit, not only keywords.
+5. Prefer exact workflow fit over broad domain fit.
+6. Recommend only `1-3` skills.
+7. Use the user's language for the recommendation.
+8. Keep each recommendation concise: skill name plus one short practical reason.
+9. Ask which skill to use, unless a skip condition applies.
+
+Chinese recommendation style:
+
+```text
+我匹配到 2 个最相关的 skill：
+
+- `技能名`：一句话说明它为什么适合。
+- `技能名`：一句话说明它为什么适合。
+
+你想用哪一个？也可以说“直接回答”。
+```
+
+English recommendation style:
+
+```text
+I found 2 relevant skills:
+
+- `skill-name`: one short reason it fits.
+- `skill-name`: one short reason it fits.
+
+Which one should I use? You can also say "answer directly".
+```
+
+## Self-Growing Skill Logic
+
+After each selection or skill-management session:
+
+1. Record useful match patterns in `.skill-index/selection-memory.md`.
+2. Record missed or poor matches as improvement notes.
+3. If a user repeatedly asks for a workflow that no skill covers, suggest creating a new skill.
+4. If several skills overlap heavily, suggest linking, merging, or marking one as `needs-review`.
+5. If a skill requires setup and that setup fails, record the failure pattern for future warnings.
+6. If a new skill appears in the local skills root, re-run the scanner and update the category map.
+
+Do not directly delete or rewrite unrelated local skills. Default to producing recommendations, indexes, and draft improvements.
 
 ## Continue Conditions
 

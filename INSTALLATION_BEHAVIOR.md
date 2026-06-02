@@ -34,7 +34,21 @@ Published behavior must not:
 
 ## Future Offline Indexing Direction
 
-If the project later adds install-time or update-time indexing for lower token usage, the intended behavior is:
+The project now includes an optional first-use / install-time scanner:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-local-skills.ps1
+```
+
+The scanner writes local runtime artifacts to:
+
+```text
+skill-selection-assistant/.skill-index/
+```
+
+Those artifacts are intentionally ignored by git because they describe the installing user's local skill library.
+
+The intended behavior is:
 
 1. resolve the user's local Codex home or skills root from the runtime environment
 2. scan that installed local skill directory
@@ -42,3 +56,13 @@ If the project later adds install-time or update-time indexing for lower token u
 4. use that catalog only as a portable per-user runtime aid
 
 The catalog should reflect the user's actual installed skills, because every user's local skill set may be different.
+
+## Self-Growing Direction
+
+The local index is not only a static catalog. It should support a self-growing loop:
+
+1. new local skills are discovered by re-running the scanner
+2. recurring user intents are recorded in `selection-memory.md`
+3. poor or missed matches become category-improvement notes
+4. repeated unmet workflows become suggestions for new skills
+5. overlapping skills become link, merge, or `needs-review` suggestions

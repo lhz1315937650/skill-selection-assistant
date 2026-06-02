@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.0 - 2026-06-02
+
+- added first-use / install-time local skill scanning through `scripts/scan-local-skills.ps1`
+- added multi-level skill classification: origin, domain, task type, output type, setup level, and status
+- added `.skill-index/` runtime artifacts for local indexes, category maps, and selection memory
+- added self-growing skill-library logic for recurring intents, missed matches, overlapping skills, and new skill suggestions
+- documented repository-level self-growth requirements in `SELF_GROWTH.md`
+- kept published behavior portable by resolving the user's own skills root instead of hardcoding a publisher path
+
 ## v1.4.0 - 2026-05-25
 
 - added a portability rule so published behavior must target each user's own installed local skills, not the repository author's personal path

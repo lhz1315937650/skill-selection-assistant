@@ -23,6 +23,8 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 ## Core Behavior
 
 - inspects the user's local skill library before continuing with a normal request
+- optionally scans the local skills root on install or first use
+- classifies skills by origin, domain, task type, output type, setup level, and status
 - recommends only the best `1-3` matching skills
 - explains each match briefly in the same language the user used
 - asks the user which skill to use before continuing
@@ -30,6 +32,7 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 - asks the user to choose again only when a later turn clearly needs a different skill
 - asks for confirmation before downloading or installing dependencies required by a selected skill
 - asks follow-up setup questions when the selected skill still needs user-specific prerequisite configuration
+- records recurring match patterns, missed matches, and skill gaps so the local skill library can become self-growing
 
 ## Important Portability Rule
 
@@ -57,15 +60,35 @@ instead of:
 
 - "pick the tool again every turn"
 
-## Future Direction For Lower Token Usage
+## Install-Time / First-Use Local Index
 
-This skill can become more token-efficient only if the host environment allows prefiltering before the main model sees the full skill universe.
+This repository includes a portable scanner that can be run during install, update, or first use:
 
-The intended future direction is:
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-local-skills.ps1
+```
+
+It scans the user's own local Codex skills root and writes:
+
+```text
+skill-selection-assistant/.skill-index/
+|-- skills-index.json
+|-- skills-categories.md
+`-- selection-memory.md
+```
+
+The generated index is local to the installing user and is ignored by git.
+
+## Self-Growing Skill Library
+
+This skill is intended to make the whole local skill library self-growing:
 
 1. build a lightweight local skill catalog during install or update
 2. classify requests against that catalog first
 3. send only the top candidate skills into the main routing step
+4. record useful and failed matches in local selection memory
+5. suggest new skills when repeated workflows are not covered
+6. suggest linking, merging, or reviewing overlapping skills
 
 By itself, smarter in-model recommendation does not guarantee lower token usage if the host still injects the full skill list every turn.
 
@@ -124,8 +147,11 @@ skill-selection-assistant/
 |-- LICENSE
 |-- CHANGELOG.md
 |-- INSTALLATION_BEHAVIOR.md
+|-- SELF_GROWTH.md
 `-- skill-selection-assistant/
     |-- SKILL.md
+    |-- scripts/
+    |   `-- scan-local-skills.ps1
     `-- agents/
         `-- openai.yaml
 ```
@@ -182,8 +208,10 @@ Before answering each new normal request:
 You can edit:
 
 - `skill-selection-assistant/SKILL.md` to change the routing behavior and wording
+- `skill-selection-assistant/scripts/scan-local-skills.ps1` to adjust portable scanning and classification
 - `skill-selection-assistant/agents/openai.yaml` to change agent metadata and default prompt behavior
 - `INSTALLATION_BEHAVIOR.md` to document portable indexing or install/update behavior
+- `SELF_GROWTH.md` to document self-growing library policies
 
 ## Release Notes
 
