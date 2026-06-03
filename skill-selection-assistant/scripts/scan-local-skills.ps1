@@ -99,6 +99,57 @@ function Get-ContentHash {
   }
 }
 
+function Get-ObjectProperty {
+  param([object]$Object, [string]$Name, [object]$Default = $null)
+  if ($null -eq $Object) { return $Default }
+  if ($Object.PSObject.Properties.Name -contains $Name) {
+    return $Object.PSObject.Properties[$Name].Value
+  }
+  return $Default
+}
+
+function ConvertTo-OrderedHashtable {
+  param([object]$Object)
+  $map = @{}
+  if ($null -eq $Object) { return $map }
+  foreach ($property in $Object.PSObject.Properties) {
+    $map[$property.Name] = $property.Value
+  }
+  return $map
+}
+
+function Import-RuleConfig {
+  param([string]$SkillDir)
+  $rulesPath = Join-Path $SkillDir "rules\categories.json"
+  if (-not (Test-Path -LiteralPath $rulesPath)) {
+    throw "Shared category rules not found: $rulesPath"
+  }
+  return (Get-Content -LiteralPath $rulesPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+}
+
+function Import-ParseCache {
+  param([string]$Path)
+  $items = @()
+  if (-not (Test-Path -LiteralPath $Path)) { return $items }
+
+  if ([IO.Path]::GetExtension($Path).Equals(".ndjson", [System.StringComparison]::OrdinalIgnoreCase)) {
+    foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+      if ([string]::IsNullOrWhiteSpace($line)) { continue }
+      $items += ($line | ConvertFrom-Json)
+    }
+    return $items
+  }
+
+  $cache = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+  return @($cache.items)
+}
+
+function Export-ParseCache {
+  param([object[]]$Items, [string]$Path)
+  $lines = @($Items | ForEach-Object { $_ | ConvertTo-Json -Depth 20 -Compress })
+  Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
+}
+
 function Get-OriginRank {
   param([string]$Origin)
   switch ($Origin) {
@@ -125,26 +176,8 @@ function Get-PrimaryDomain {
   param([string[]]$Details, [string[]]$Domains)
 
   foreach ($detail in @($Details)) {
-    switch ($detail) {
-      "academic-research" { return "research" }
-      "document-processing" { return "documents" }
-      "presentation-slides" { return "documents" }
-      "spreadsheet-data" { return "data" }
-      "data-analysis" { return "data" }
-      "publishing-social" { return "publishing" }
-      "visual-design" { return "design" }
-      "media-video-audio" { return "design" }
-      "security-risk" { return "safety" }
-      "ai-ml" { return "coding" }
-      "coding-general" { return "coding" }
-      "frontend-web" { return "coding" }
-      "backend-api" { return "coding" }
-      "testing-debugging" { return "coding" }
-      "devops-git" { return "coding" }
-      "automation-integration" { return "coding" }
-      "business-product" { return "data" }
-      "writing-editing" { return "writing" }
-      "translation-localization" { return "writing" }
+    if ($domainMap.ContainsKey($detail)) {
+      return $domainMap[$detail]
     }
   }
   if (@($Domains).Count -gt 0) { return @($Domains)[0] }
@@ -175,73 +208,6 @@ function Get-WeightedDomainDetails {
     $strong = @($scores.GetEnumerator() | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 3)
   }
   return @($strong | ForEach-Object { $_.Key })
-}
-
-$domainDetailRules = [ordered]@{
-  "academic-research" = "academic|paper|literature|citation|arxiv|research|scholar|thesis|abstract|methodology|empirical|experiment"
-  "writing-editing" = "writing|writer|article|blog|copy|proofread|polish|tone|grammar|humanizer|story|outline"
-  "translation-localization" = "translate|translation|localization|bilingual|language"
-  "document-processing" = "pdf|docx|document|word|latex|ocr|text extraction|forms"
-  "presentation-slides" = "pptx|slide|deck|presentation"
-  "spreadsheet-data" = "excel|xlsx|spreadsheet|csv|table|stata|spss|sas"
-  "data-analysis" = "data|analysis|analytics|visualization|dashboard|chart|benchmark|metrics|statistics|forecast"
-  "ai-ml" = "\bai\b|ml|machine learning|llm|model|prompt|agent|rag|embedding|neural|classifier"
-  "coding-general" = "code|coding|developer|software|programming|refactor|architecture|typescript|javascript|python|java|golang|rust"
-  "frontend-web" = "frontend|react|vue|html|css|web|browser|ui|ux|tailwind"
-  "backend-api" = "api|backend|server|database|sql|webhook|sdk|mcp|graphql|rest"
-  "testing-debugging" = "test|debug|ci|qa|tdd|unit|integration|bug"
-  "devops-git" = "git|github|deploy|docker|kubernetes|ci/cd|release"
-  "security-risk" = "security|risk|guardrail|safety|privacy|auth|oauth|token|compliance|audit"
-  "visual-design" = "image|design|diagram|cover|comic|visual|poster|logo|infographic|canvas|figma"
-  "media-video-audio" = "video|audio|youtube|transcript|subtitle|podcast"
-  "publishing-social" = "publish|post|wechat|weibo|xhs|twitter|social|newsletter"
-  "business-product" = "product|prd|market|sales|customer|finance|business|strategy|roadmap"
-  "automation-integration" = "automation|integrat|connector|composio|zapier|workflow"
-}
-
-$domainMap = @{
-  "academic-research" = "research"
-  "writing-editing" = "writing"
-  "translation-localization" = "writing"
-  "document-processing" = "documents"
-  "presentation-slides" = "documents"
-  "spreadsheet-data" = "data"
-  "data-analysis" = "data"
-  "ai-ml" = "coding"
-  "coding-general" = "coding"
-  "frontend-web" = "coding"
-  "backend-api" = "coding"
-  "testing-debugging" = "coding"
-  "devops-git" = "coding"
-  "security-risk" = "safety"
-  "visual-design" = "design"
-  "media-video-audio" = "design"
-  "publishing-social" = "publishing"
-  "business-product" = "data"
-  "automation-integration" = "coding"
-}
-
-$taskRules = [ordered]@{
-  summarize = "summar"
-  review = "review|audit|evaluate|critique|check"
-  generate = "generate|create|write|compose|draft|build"
-  transform = "transform|convert|format|rewrite|refactor|migrate"
-  "test-debug" = "test|debug|troubleshoot|fix|diagnose"
-  extract = "extract|parse|scrape|transcript|ocr"
-  publish = "publish|post|release|deploy"
-  plan = "plan|strategy|roadmap|design"
-  analyze = "analy|inspect|benchmark|measure"
-}
-
-$outputRules = [ordered]@{
-  markdown = "markdown|md"
-  image = "image|png|jpg|jpeg|webp|svg"
-  pptx = "pptx|slide|deck|ppt"
-  docx = "docx|word"
-  xlsx = "xlsx|excel|spreadsheet|csv"
-  html = "html|web"
-  code = "code|script|typescript|javascript|python|powershell|shell"
-  report = "report|brief|summary"
 }
 
 function Get-SetupLevel {
@@ -311,21 +277,43 @@ function Get-RoutePriority {
   return $score
 }
 
+function Add-RouteMapItem {
+  param([hashtable]$Map, [string]$Key, [object]$Item)
+  if ([string]::IsNullOrWhiteSpace($Key)) { $Key = "general" }
+  $Key = [string]$Key
+  if (-not $Map.ContainsKey($Key)) {
+    $Map[$Key] = @()
+  }
+  $Map[$Key] = @($Map[$Key]) + $Item
+}
+
 $skillsRootResolved = Resolve-SkillsRoot -ExplicitRoot $SkillsRoot
 $skillDir = Split-Path -Parent $PSScriptRoot
+$ruleConfig = Import-RuleConfig -SkillDir $skillDir
+$RulesSchemaVersion = [string]$ruleConfig.schema_version
+$domainDetailRules = ConvertTo-OrderedHashtable -Object $ruleConfig.domain_detail_rules
+$domainMap = ConvertTo-OrderedHashtable -Object $ruleConfig.primary_map
+$taskRules = ConvertTo-OrderedHashtable -Object $ruleConfig.task_rules
+$outputRules = ConvertTo-OrderedHashtable -Object $ruleConfig.output_rules
 if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$ScannerVersion = "1.5.7"
+$OutputSchemaVersion = "1.5.9"
+$ParserSchemaVersion = "1.0"
 $manifestPath = Join-Path $OutputDir "manifest.json"
-$parseCachePath = Join-Path $OutputDir "parsed-skills-cache.json"
+$parseCachePath = Join-Path $OutputDir "parsed-skills-cache.ndjson"
+$legacyParseCachePath = Join-Path $OutputDir "parsed-skills-cache.json"
 $previousManifestByPath = @{}
 $previousCacheByPath = @{}
 if (Test-Path -LiteralPath $manifestPath) {
   try {
     $previousManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($previousManifest.scanner_version -eq $ScannerVersion) {
+    $previousParserSchemaVersion = Get-ObjectProperty -Object $previousManifest -Name "parser_schema_version" -Default ""
+    $previousRulesSchemaVersion = Get-ObjectProperty -Object $previousManifest -Name "rules_schema_version" -Default ""
+    if (-not $previousParserSchemaVersion) { $previousParserSchemaVersion = "1.0" }
+    if (-not $previousRulesSchemaVersion) { $previousRulesSchemaVersion = "1.0" }
+    if (($previousParserSchemaVersion -eq $ParserSchemaVersion) -and ($previousRulesSchemaVersion -eq $RulesSchemaVersion)) {
       foreach ($entry in @($previousManifest.files)) {
         if ($entry.skill_md) {
           $previousManifestByPath[[string]$entry.skill_md] = $entry
@@ -337,14 +325,14 @@ if (Test-Path -LiteralPath $manifestPath) {
     $previousManifestByPath = @{}
   }
 }
-if ((Test-Path -LiteralPath $parseCachePath) -and $previousManifestByPath.Count -gt 0) {
+if ($previousManifestByPath.Count -gt 0) {
   try {
-    $previousCache = Get-Content -LiteralPath $parseCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($previousCache.scanner_version -eq $ScannerVersion) {
-      foreach ($item in @($previousCache.items)) {
-        if ($item.skill_md) {
-          $previousCacheByPath[[string]$item.skill_md] = $item
-        }
+    $cacheFileName = Get-ObjectProperty -Object $previousManifest -Name "cache_file" -Default ""
+    $previousParseCachePath = if ($cacheFileName) { Join-Path $OutputDir $cacheFileName } else { $legacyParseCachePath }
+    if (-not (Test-Path -LiteralPath $previousParseCachePath)) { $previousParseCachePath = $legacyParseCachePath }
+    foreach ($item in @(Import-ParseCache -Path $previousParseCachePath)) {
+      if ($item.skill_md) {
+        $previousCacheByPath[[string]$item.skill_md] = $item
       }
     }
   }
@@ -452,22 +440,20 @@ $manifestFiles = @($rawItems | ForEach-Object {
 
 $manifest = [pscustomobject]@{
   generated_at = (Get-Date).ToString("s")
-  scanner_version = $ScannerVersion
+  output_schema_version = $OutputSchemaVersion
+  parser_schema_version = $ParserSchemaVersion
+  rules_schema_version = $RulesSchemaVersion
   skills_root = $skillsRootResolved
-  cache_file = "parsed-skills-cache.json"
+  cache_file = "parsed-skills-cache.ndjson"
   total = $manifestFiles.Count
   files = $manifestFiles
 }
 $manifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
 
-$parseCache = [pscustomobject]@{
-  generated_at = $manifest.generated_at
-  scanner_version = $ScannerVersion
-  skills_root = $skillsRootResolved
-  total = $rawItems.Count
-  items = $rawItems
+Export-ParseCache -Items $rawItems -Path $parseCachePath
+if ((Test-Path -LiteralPath $legacyParseCachePath) -and ($legacyParseCachePath -ne $parseCachePath)) {
+  Remove-Item -LiteralPath $legacyParseCachePath -Force
 }
-$parseCache | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $parseCachePath -Encoding UTF8
 
 $items = @()
 $duplicateGroups = @()
@@ -586,12 +572,27 @@ if ($IncludeFullRoutes) {
 }
 New-Item -ItemType Directory -Force -Path $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
 $ShortlistLimit = 200
+$primaryRouteMap = @{}
+$detailRouteMap = @{}
+$taskRouteMap = @{}
+foreach ($item in $items) {
+  Add-RouteMapItem -Map $primaryRouteMap -Key $item.primary_domain -Item $item
+  foreach ($detail in @($item.domain_detail)) {
+    Add-RouteMapItem -Map $detailRouteMap -Key $detail -Item $item
+  }
+  foreach ($task in @($item.task_type)) {
+    Add-RouteMapItem -Map $taskRouteMap -Key $task -Item $item
+  }
+}
 
 $routeSummary = [ordered]@{
   generated_at = $index.generated_at
   index_scope = "installing-user-local-skills"
   skill_instance_dir = $skillDir
   skills_root = $skillsRootResolved
+  output_schema_version = $OutputSchemaVersion
+  parser_schema_version = $ParserSchemaVersion
+  rules_schema_version = $RulesSchemaVersion
   raw_total = $rawItems.Count
   total = $items.Count
   duplicate_groups = $duplicateGroups.Count
@@ -616,16 +617,18 @@ $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Primary Domain Routes")
 $routeSummaryLines.Add("")
-$items | Group-Object primary_domain | Sort-Object Count -Descending | ForEach-Object {
-  $fileName = (Get-SafeFileName -Name $_.Name) + ".json"
+foreach ($routeEntry in $primaryRouteMap.GetEnumerator()) {
+  $routeName = [string]$routeEntry.Key
+  $routeItems = @($routeEntry.Value)
+  $fileName = (Get-SafeFileName -Name $routeName) + ".json"
   $routePath = Join-Path $primaryRoutesDir $fileName
-  $entries = @($_.Group | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
+  $entries = @($routeItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
   $relativeRoutePath = ""
   if ($IncludeFullRoutes) {
     $routeObject = [pscustomobject]@{
       generated_at = $index.generated_at
       route_type = "primary_domain"
-      category = $_.Name
+      category = $routeName
       count = $entries.Count
       candidates = $entries
     }
@@ -637,23 +640,23 @@ $items | Group-Object primary_domain | Sort-Object Count -Descending | ForEach-O
   $shortlistObject = [pscustomobject]@{
     generated_at = $index.generated_at
     route_type = "primary_domain"
-    category = $_.Name
+    category = $routeName
     source_count = $entries.Count
     count = $shortlistEntries.Count
     candidates = $shortlistEntries
   }
   $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
   $relativeShortlistPath = "shortlists/primary-domain/" + $fileName
-  $routeSummary.primary_domain += [pscustomobject]@{ name = $_.Name; count = $_.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
-  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $_.Name, $_.Count, $(if ($relativeRoutePath) { $relativeRoutePath } else { "not generated" }), $relativeShortlistPath, $shortlistEntries.Count))
+  $routeSummary.primary_domain += [pscustomobject]@{ name = $routeName; count = $routeItems.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
+  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $routeName, $routeItems.Count, $(if ($relativeRoutePath) { $relativeRoutePath } else { "not generated" }), $relativeShortlistPath, $shortlistEntries.Count))
 }
 $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Domain Detail Routes")
 $routeSummaryLines.Add("")
-$detailValues = Join-UniqueValues -Values ($items | ForEach-Object { $_.domain_detail })
-foreach ($detail in $detailValues) {
-  $groupItems = @($items | Where-Object { @($_.domain_detail) -contains $detail })
+foreach ($detailEntry in $detailRouteMap.GetEnumerator()) {
+  $detail = [string]$detailEntry.Key
+  $groupItems = @($detailEntry.Value)
   $fileName = (Get-SafeFileName -Name $detail) + ".json"
   $routePath = Join-Path $detailRoutesDir $fileName
   $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
@@ -691,9 +694,9 @@ $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Task Type Routes")
 $routeSummaryLines.Add("")
-$taskValues = Join-UniqueValues -Values ($items | ForEach-Object { $_.task_type })
-foreach ($task in $taskValues) {
-  $groupItems = @($items | Where-Object { @($_.task_type) -contains $task })
+foreach ($taskEntry in $taskRouteMap.GetEnumerator()) {
+  $task = [string]$taskEntry.Key
+  $groupItems = @($taskEntry.Value)
   $fileName = (Get-SafeFileName -Name $task) + ".json"
   $routePath = Join-Path $taskRoutesDir $fileName
   $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
@@ -786,6 +789,9 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   SkillInstanceDir = $skillDir
   SkillsRoot = $skillsRootResolved
   OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
+  OutputSchemaVersion = $OutputSchemaVersion
+  ParserSchemaVersion = $ParserSchemaVersion
+  RulesSchemaVersion = $RulesSchemaVersion
   RawTotal = $rawItems.Count
   Total = $items.Count
   DuplicateGroups = $duplicateGroups.Count

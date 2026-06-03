@@ -219,7 +219,7 @@ The scanner should:
 3. Classify each skill into weighted multi-level categories.
 4. Write `.skill-index/skills-index.json`.
 5. Write `.skill-index/manifest.json` as a lightweight file fingerprint manifest.
-6. Write `.skill-index/parsed-skills-cache.json` for unchanged-file parse reuse.
+6. Write `.skill-index/parsed-skills-cache.ndjson` for unchanged-file parse reuse.
 7. Write `.skill-index/skills-categories.md`.
 8. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
 9. Write category-specific route files under `.skill-index/routes/` only when `-IncludeFullRoutes` is used for audits.
@@ -227,6 +227,8 @@ The scanner should:
 11. Write or preserve `.skill-index/selection-memory.md`.
 
 The scanner output should keep `SkillInstanceDir` and `SkillsRoot` separate so users can see which router skill instance produced the index and which local skill library was scanned.
+
+The scanner and route inference should load shared classification rules from `rules/categories.json`. Do not hardcode publisher-specific skill names, local counts, or local paths into those rules.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 

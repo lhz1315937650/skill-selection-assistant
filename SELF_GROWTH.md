@@ -35,7 +35,7 @@ The scanner writes local runtime artifacts to:
 skill-selection-assistant/.skill-index/
 |-- skills-index.json
 |-- manifest.json
-|-- parsed-skills-cache.json
+|-- parsed-skills-cache.ndjson
 |-- skills-categories.md
 |-- route-summary.json
 |-- route-summary.md
@@ -61,7 +61,8 @@ The scanner keeps the real local skills untouched. Deduplication only changes th
 - `duplicates_removed` records how many duplicate entries were merged out of the index view.
 - `duplicates` records merged names, source paths, source origins, and distinct content counts.
 - `manifest.json` stores lightweight file fingerprints so unchanged files can be recognized quickly.
-- `parsed-skills-cache.json` stores reusable parsed skill metadata for cache hits.
+- `parsed-skills-cache.ndjson` stores reusable parsed skill metadata for cache hits, one skill per line.
+- `rules/categories.json` stores shared classification and query-inference rules used by both the scanner and route inference.
 - `primary_domain` is the best single broad domain for fast selection.
 - `domain_detail` records weighted fine-grained labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, and `testing-debugging`.
 - Same-name skills with different content are preserved as separate variants instead of being forced into one representative candidate.

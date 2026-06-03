@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.9 - 2026-06-03
+
+- fixed garbled Chinese display metadata in `skill-selection-assistant/agents/openai.yaml`
+- added shared classification rules in `skill-selection-assistant/rules/categories.json`
+- changed scan and route inference scripts to load the same shared category rules
+- split parser, rules, and output schema versions so output-only changes do not force parser-cache invalidation
+- changed parsed skill cache output to `parsed-skills-cache.ndjson`
+- optimized route bucket generation to avoid repeated full-list filtering by category
+- added `scripts/clean-local-artifacts.ps1` for repository-only cleanup before review or packaging
+- added `scripts/package-release.ps1` so release zips exclude local `.skill-index/` and `dist/` artifacts
+- extended smoke tests to verify release packaging does not include local runtime artifacts
+
 ## v1.5.8 - 2026-06-03
 
 - clarified the boundary between the installed router skill and the downloader's scanned local skill library

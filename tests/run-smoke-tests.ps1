@@ -21,6 +21,9 @@ $skillRoot = Join-Path $repoRoot "tests\fixtures\skills"
 $scanScript = Join-Path $repoRoot "skill-selection-assistant\scripts\scan-local-skills.ps1"
 $inferScript = Join-Path $repoRoot "skill-selection-assistant\scripts\infer-route.ps1"
 $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.ps1"
+$cleanScript = Join-Path $repoRoot "scripts\clean-local-artifacts.ps1"
+$packageScript = Join-Path $repoRoot "scripts\package-release.ps1"
+$rulesPath = Join-Path $repoRoot "skill-selection-assistant\rules\categories.json"
 $outputRoot = Join-Path $env:TEMP ("skill-selection-smoke-" + [guid]::NewGuid().ToString("N"))
 $indexDir = Join-Path $outputRoot ".skill-index"
 
@@ -32,11 +35,12 @@ try {
   $indexPath = Join-Path $indexDir "skills-index.json"
   $summaryPath = Join-Path $indexDir "route-summary.json"
   $manifestPath = Join-Path $indexDir "manifest.json"
-  $parseCachePath = Join-Path $indexDir "parsed-skills-cache.json"
+  $parseCachePath = Join-Path $indexDir "parsed-skills-cache.ndjson"
+  Assert-True (Test-Path -LiteralPath $rulesPath) "shared category rules should exist"
   Assert-True (Test-Path -LiteralPath $indexPath) "skills-index.json should be generated"
   Assert-True (Test-Path -LiteralPath $summaryPath) "route-summary.json should be generated"
   Assert-True (Test-Path -LiteralPath $manifestPath) "manifest.json should be generated"
-  Assert-True (Test-Path -LiteralPath $parseCachePath) "parsed-skills-cache.json should be generated"
+  Assert-True (Test-Path -LiteralPath $parseCachePath) "parsed-skills-cache.ndjson should be generated"
 
   $index = Read-Json -Path $indexPath
   $manifest = Read-Json -Path $manifestPath
@@ -46,7 +50,8 @@ try {
   Assert-True ([int]$index.duplicates_removed -eq 1) "duplicates_removed should be 1"
   Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
   Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
-  Assert-True ($manifest.cache_file -eq "parsed-skills-cache.json") "manifest should point to parse cache"
+  Assert-True ($manifest.cache_file -eq "parsed-skills-cache.ndjson") "manifest should point to NDJSON parse cache"
+  Assert-True ($summary.rules_schema_version -eq "1.0") "route summary should expose shared rules schema"
   Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
 
   $duplicateVariants = @($index.skills | Where-Object { $_.canonical_name -eq "duplicate-tool" })
@@ -85,6 +90,25 @@ try {
   Assert-True ($recommendation.selection.candidates[0].name -eq "frontend-design") "frontend-design should be first for frontend UI query"
   Assert-True ($recommendation.selection.merged_variants -eq $true) "recommendation should merge same-name variants by default"
 
+  Assert-True (Test-Path -LiteralPath $cleanScript) "clean-local-artifacts.ps1 should exist"
+  $cleanPreview = (& $cleanScript -WhatIf | Out-String | ConvertFrom-Json)
+  Assert-True ($cleanPreview.WhatIf -eq $true) "clean-local-artifacts.ps1 -WhatIf should be safe to preview"
+
+  Assert-True (Test-Path -LiteralPath $packageScript) "package-release.ps1 should exist"
+  $packageResult = (& $packageScript -Version "smoke-test" | Out-String | ConvertFrom-Json)
+  Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
+  Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $archive = [System.IO.Compression.ZipFile]::OpenRead($packageResult.Zip)
+  try {
+    $artifactEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-index*" -or $_.FullName -like "dist/*" })
+    Assert-True ($artifactEntries.Count -eq 0) "package zip should exclude local artifacts"
+  }
+  finally {
+    $archive.Dispose()
+  }
+  Remove-Item -LiteralPath $packageResult.Zip -Force
+
   [pscustomobject]@{
     Status = "passed"
     OutputDir = $indexDir
@@ -92,6 +116,7 @@ try {
     Total = $index.total
     DuplicatesRemoved = $index.duplicates_removed
     ManifestCacheFile = $manifest.cache_file
+    RulesSchemaVersion = $summary.rules_schema_version
     FrontendCategory = $frontendRouteInference.category
     FirstRecommendation = $recommendation.selection.candidates[0].name
   } | ConvertTo-Json -Depth 4
