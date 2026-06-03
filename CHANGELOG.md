@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.6 - 2026-06-03
+
+- split scan caching into a lightweight `.skill-index/manifest.json` plus `.skill-index/parsed-skills-cache.json`
+- removed full parsed skill objects from the manifest so the manifest stays small and easier to inspect
+- added GitHub Actions smoke tests for pushes, pull requests, and manual workflow runs
+- extended smoke tests to verify the manifest points to the parse cache and does not embed full skill items
+
 ## v1.5.5 - 2026-06-02
 
 - added `.skill-index/manifest.json` to cache parsed skill metadata and reuse unchanged `SKILL.md` files on later scans

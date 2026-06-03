@@ -316,9 +316,11 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$ScannerVersion = "1.5.5"
+$ScannerVersion = "1.5.6"
 $manifestPath = Join-Path $OutputDir "manifest.json"
+$parseCachePath = Join-Path $OutputDir "parsed-skills-cache.json"
 $previousManifestByPath = @{}
+$previousCacheByPath = @{}
 if (Test-Path -LiteralPath $manifestPath) {
   try {
     $previousManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -332,6 +334,21 @@ if (Test-Path -LiteralPath $manifestPath) {
   }
   catch {
     $previousManifestByPath = @{}
+  }
+}
+if ((Test-Path -LiteralPath $parseCachePath) -and $previousManifestByPath.Count -gt 0) {
+  try {
+    $previousCache = Get-Content -LiteralPath $parseCachePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ($previousCache.scanner_version -eq $ScannerVersion) {
+      foreach ($item in @($previousCache.items)) {
+        if ($item.skill_md) {
+          $previousCacheByPath[[string]$item.skill_md] = $item
+        }
+      }
+    }
+  }
+  catch {
+    $previousCacheByPath = @{}
   }
 }
 
@@ -349,8 +366,12 @@ foreach ($file in $skillFiles) {
   $cached = $null
   if ($previousManifestByPath.ContainsKey($file.FullName)) {
     $previousEntry = $previousManifestByPath[$file.FullName]
-    if (([int64]$previousEntry.file_length -eq [int64]$file.Length) -and ([int64]$previousEntry.last_write_ticks -eq [int64]$file.LastWriteTime.Ticks)) {
-      $cached = $previousEntry.item
+    if (
+      ([int64]$previousEntry.file_length -eq [int64]$file.Length) -and
+      ([int64]$previousEntry.last_write_ticks -eq [int64]$file.LastWriteTime.Ticks) -and
+      $previousCacheByPath.ContainsKey($file.FullName)
+    ) {
+      $cached = $previousCacheByPath[$file.FullName]
     }
   }
 
@@ -420,9 +441,11 @@ $manifestFiles = @($rawItems | ForEach-Object {
   [pscustomobject]@{
     skill_md = $_.skill_md
     relative_path = $_.relative_path
+    canonical_name = $_.canonical_name
+    origin = $_.origin
     file_length = $_.file_length
     last_write_ticks = $_.last_write_ticks
-    item = $_
+    content_hash = $_.content_hash
   }
 })
 
@@ -430,10 +453,20 @@ $manifest = [pscustomobject]@{
   generated_at = (Get-Date).ToString("s")
   scanner_version = $ScannerVersion
   skills_root = $skillsRootResolved
+  cache_file = "parsed-skills-cache.json"
   total = $manifestFiles.Count
   files = $manifestFiles
 }
 $manifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+
+$parseCache = [pscustomobject]@{
+  generated_at = $manifest.generated_at
+  scanner_version = $ScannerVersion
+  skills_root = $skillsRootResolved
+  total = $rawItems.Count
+  items = $rawItems
+}
+$parseCache | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $parseCachePath -Encoding UTF8
 
 $items = @()
 $duplicateGroups = @()
@@ -740,6 +773,7 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   DuplicatesRemoved = ($rawItems.Count - $items.Count)
   Index = Join-Path $OutputDir "skills-index.json"
   Manifest = $manifestPath
+  ParseCache = $parseCachePath
   Categories = Join-Path $OutputDir "skills-categories.md"
   RouteSummary = Join-Path $OutputDir "route-summary.json"
   RoutesDir = $routesDir

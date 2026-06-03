@@ -208,12 +208,13 @@ The scanner should:
 2. Read each `SKILL.md` frontmatter and lightweight body preview.
 3. Classify each skill into weighted multi-level categories.
 4. Write `.skill-index/skills-index.json`.
-5. Write `.skill-index/manifest.json` for unchanged-file scan reuse.
-6. Write `.skill-index/skills-categories.md`.
-7. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
-8. Write category-specific route files under `.skill-index/routes/`.
-9. Write category-specific shortlist files under `.skill-index/shortlists/`.
-10. Write or preserve `.skill-index/selection-memory.md`.
+5. Write `.skill-index/manifest.json` as a lightweight file fingerprint manifest.
+6. Write `.skill-index/parsed-skills-cache.json` for unchanged-file parse reuse.
+7. Write `.skill-index/skills-categories.md`.
+8. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
+9. Write category-specific route files under `.skill-index/routes/`.
+10. Write category-specific shortlist files under `.skill-index/shortlists/`.
+11. Write or preserve `.skill-index/selection-memory.md`.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 

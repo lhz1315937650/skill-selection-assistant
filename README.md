@@ -74,6 +74,7 @@ It scans the user's own local Codex skills root and writes:
 skill-selection-assistant/.skill-index/
 |-- skills-index.json
 |-- manifest.json
+|-- parsed-skills-cache.json
 |-- skills-categories.md
 |-- route-summary.json
 |-- route-summary.md
@@ -92,7 +93,7 @@ The generated index is local to the installing user and is ignored by git.
 
 For token efficiency, `skills-index.json` and full route files are treated as fallback and audit files. Normal recommendation should infer one category, read only the matching shortlist, and then inspect only the top candidate skills.
 
-`manifest.json` caches parsed skill metadata. Re-running the scanner can reuse unchanged `SKILL.md` files when the script version, file size, and modified time match.
+`manifest.json` is a lightweight file fingerprint manifest. `parsed-skills-cache.json` stores reusable parsed skill metadata. Re-running the scanner can reuse unchanged `SKILL.md` files when the script version, file size, and modified time match.
 
 You can ask the one-command recommender to infer a route and return a small shortlist:
 
@@ -183,6 +184,9 @@ skill-selection-assistant/
 |-- tests/
 |   |-- run-smoke-tests.ps1
 |   `-- fixtures/
+|-- .github/
+|   `-- workflows/
+|       `-- smoke-tests.yml
 `-- skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
@@ -223,13 +227,15 @@ powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 The smoke test uses a tiny fixture skill library and verifies:
 
 - local scanning and index generation
-- manifest-backed rescanning
+- manifest-backed rescanning with a separate parse cache
 - exact duplicate merging
 - same-name different-content variant preservation
 - default same-name variant merging in recommendations
 - stale route and shortlist cleanup on rescan
 - route inference for frontend and academic requests
 - one-command recommendation through `recommend-skills.ps1`
+
+The same smoke test also runs in GitHub Actions on `main` pushes, pull requests, and manual workflow dispatch.
 
 ## Recommended AGENTS.md Rule
 

@@ -31,13 +31,20 @@ try {
 
   $indexPath = Join-Path $indexDir "skills-index.json"
   $summaryPath = Join-Path $indexDir "route-summary.json"
+  $manifestPath = Join-Path $indexDir "manifest.json"
+  $parseCachePath = Join-Path $indexDir "parsed-skills-cache.json"
   Assert-True (Test-Path -LiteralPath $indexPath) "skills-index.json should be generated"
   Assert-True (Test-Path -LiteralPath $summaryPath) "route-summary.json should be generated"
+  Assert-True (Test-Path -LiteralPath $manifestPath) "manifest.json should be generated"
+  Assert-True (Test-Path -LiteralPath $parseCachePath) "parsed-skills-cache.json should be generated"
 
   $index = Read-Json -Path $indexPath
+  $manifest = Read-Json -Path $manifestPath
   Assert-True ([int]$index.raw_total -eq 7) "raw_total should be 7"
   Assert-True ([int]$index.total -eq 6) "total should preserve same-name variants and merge exact duplicates"
   Assert-True ([int]$index.duplicates_removed -eq 1) "duplicates_removed should be 1"
+  Assert-True ($manifest.cache_file -eq "parsed-skills-cache.json") "manifest should point to parse cache"
+  Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
 
   $duplicateVariants = @($index.skills | Where-Object { $_.canonical_name -eq "duplicate-tool" })
   Assert-True ($duplicateVariants.Count -eq 2) "duplicate-tool should have two content variants"
@@ -74,6 +81,7 @@ try {
     RawTotal = $index.raw_total
     Total = $index.total
     DuplicatesRemoved = $index.duplicates_removed
+    ManifestCacheFile = $manifest.cache_file
     FrontendCategory = $frontendRouteInference.category
     FirstRecommendation = $recommendation.selection.candidates[0].name
   } | ConvertTo-Json -Depth 4
