@@ -73,7 +73,10 @@ if ((-not $UseFullRoute) -and (Test-Path -LiteralPath $shortlistPath)) {
 }
 
 if (-not (Test-Path -LiteralPath $routePath)) {
-  throw "Route file not found: $routePath. Re-run scan-local-skills.ps1 or choose a category from route-summary.md."
+  if ($UseFullRoute) {
+    throw "Full route file not found: $routePath. Re-run scan-local-skills.ps1 with -IncludeFullRoutes, or omit -UseFullRoute to use the generated shortlist."
+  }
+  throw "Shortlist file not found: $routePath. Re-run scan-local-skills.ps1 or choose a category from route-summary.md."
 }
 
 $route = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 | ConvertFrom-Json

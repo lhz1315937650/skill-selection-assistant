@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.7 - 2026-06-03
+
+- made full route file generation optional through `scan-local-skills.ps1 -IncludeFullRoutes`
+- changed the default scan output to generate shortlists and route summaries without large full route JSON files
+- updated selector errors to explain when full routes were not generated and how to create them for audits
+- extended smoke tests to verify default shortlist-only scanning and explicit full-route generation
+
 ## v1.5.6 - 2026-06-03
 
 - split scan caching into a lightweight `.skill-index/manifest.json` plus `.skill-index/parsed-skills-cache.json`

@@ -1,6 +1,7 @@
 param(
   [string]$SkillsRoot = "",
-  [string]$OutputDir = ""
+  [string]$OutputDir = "",
+  [switch]$IncludeFullRoutes
 )
 
 $ErrorActionPreference = "Stop"
@@ -316,7 +317,7 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$ScannerVersion = "1.5.6"
+$ScannerVersion = "1.5.7"
 $manifestPath = Join-Path $OutputDir "manifest.json"
 $parseCachePath = Join-Path $OutputDir "parsed-skills-cache.json"
 $previousManifestByPath = @{}
@@ -580,7 +581,10 @@ foreach ($generatedDir in @($routesDir, $shortlistsDir)) {
   }
 }
 
-New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir, $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
+if ($IncludeFullRoutes) {
+  New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir | Out-Null
+}
+New-Item -ItemType Directory -Force -Path $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
 $ShortlistLimit = 200
 
 $routeSummary = [ordered]@{
@@ -590,7 +594,8 @@ $routeSummary = [ordered]@{
   total = $items.Count
   duplicate_groups = $duplicateGroups.Count
   duplicates_removed = ($rawItems.Count - $items.Count)
-  route_rule = "Read this summary first, choose one primary_domain/domain_detail/task_type, then read the matching shortlist before reading full route files or candidate SKILL.md files."
+  full_routes_generated = [bool]$IncludeFullRoutes
+  route_rule = "Read this summary first, choose one primary_domain/domain_detail/task_type, then read the matching shortlist before reading full route files or candidate SKILL.md files. Full route files are generated only when scan-local-skills.ps1 is run with -IncludeFullRoutes."
   primary_domain = @()
   domain_detail = @()
   task_type = @()
@@ -603,7 +608,8 @@ $routeSummaryLines.Add("- Generated: " + $index.generated_at)
 $routeSummaryLines.Add("- Raw skills: " + $rawItems.Count)
 $routeSummaryLines.Add("- Deduplicated skills: " + $items.Count)
 $routeSummaryLines.Add("- Shortlist limit per route: " + $ShortlistLimit)
-$routeSummaryLines.Add("- Rule: determine category first, then read only the matching shortlist file.")
+$routeSummaryLines.Add("- Full routes generated: " + [bool]$IncludeFullRoutes)
+$routeSummaryLines.Add("- Rule: determine category first, then read only the matching shortlist file. Generate full route files only for audits.")
 $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Primary Domain Routes")
@@ -612,15 +618,18 @@ $items | Group-Object primary_domain | Sort-Object Count -Descending | ForEach-O
   $fileName = (Get-SafeFileName -Name $_.Name) + ".json"
   $routePath = Join-Path $primaryRoutesDir $fileName
   $entries = @($_.Group | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
-  $routeObject = [pscustomobject]@{
-    generated_at = $index.generated_at
-    route_type = "primary_domain"
-    category = $_.Name
-    count = $entries.Count
-    candidates = $entries
+  $relativeRoutePath = ""
+  if ($IncludeFullRoutes) {
+    $routeObject = [pscustomobject]@{
+      generated_at = $index.generated_at
+      route_type = "primary_domain"
+      category = $_.Name
+      count = $entries.Count
+      candidates = $entries
+    }
+    $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
+    $relativeRoutePath = "routes/primary-domain/" + $fileName
   }
-  $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
-  $relativeRoutePath = "routes/primary-domain/" + $fileName
   $shortlistPath = Join-Path $primaryShortlistsDir $fileName
   $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
   $shortlistObject = [pscustomobject]@{
@@ -634,7 +643,7 @@ $items | Group-Object primary_domain | Sort-Object Count -Descending | ForEach-O
   $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
   $relativeShortlistPath = "shortlists/primary-domain/" + $fileName
   $routeSummary.primary_domain += [pscustomobject]@{ name = $_.Name; count = $_.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.Name, $_.Count, $relativeRoutePath, $relativeShortlistPath, $shortlistEntries.Count))
+  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $_.Name, $_.Count, $(if ($relativeRoutePath) { $relativeRoutePath } else { "not generated" }), $relativeShortlistPath, $shortlistEntries.Count))
 }
 $routeSummaryLines.Add("")
 
@@ -646,15 +655,18 @@ foreach ($detail in $detailValues) {
   $fileName = (Get-SafeFileName -Name $detail) + ".json"
   $routePath = Join-Path $detailRoutesDir $fileName
   $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
-  $routeObject = [pscustomobject]@{
-    generated_at = $index.generated_at
-    route_type = "domain_detail"
-    category = $detail
-    count = $entries.Count
-    candidates = $entries
+  $relativeRoutePath = ""
+  if ($IncludeFullRoutes) {
+    $routeObject = [pscustomobject]@{
+      generated_at = $index.generated_at
+      route_type = "domain_detail"
+      category = $detail
+      count = $entries.Count
+      candidates = $entries
+    }
+    $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
+    $relativeRoutePath = "routes/domain-detail/" + $fileName
   }
-  $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
-  $relativeRoutePath = "routes/domain-detail/" + $fileName
   $shortlistPath = Join-Path $detailShortlistsDir $fileName
   $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
   $shortlistObject = [pscustomobject]@{
@@ -671,7 +683,7 @@ foreach ($detail in $detailValues) {
 }
 $routeSummary.domain_detail = @($routeSummary.domain_detail | Sort-Object @{ Expression = "count"; Descending = $true }, name)
 $routeSummary.domain_detail | ForEach-Object {
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $_.file, $_.shortlist_file, $_.shortlist_count))
+  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $(if ($_.file) { $_.file } else { "not generated" }), $_.shortlist_file, $_.shortlist_count))
 }
 $routeSummaryLines.Add("")
 
@@ -683,15 +695,18 @@ foreach ($task in $taskValues) {
   $fileName = (Get-SafeFileName -Name $task) + ".json"
   $routePath = Join-Path $taskRoutesDir $fileName
   $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
-  $routeObject = [pscustomobject]@{
-    generated_at = $index.generated_at
-    route_type = "task_type"
-    category = $task
-    count = $entries.Count
-    candidates = $entries
+  $relativeRoutePath = ""
+  if ($IncludeFullRoutes) {
+    $routeObject = [pscustomobject]@{
+      generated_at = $index.generated_at
+      route_type = "task_type"
+      category = $task
+      count = $entries.Count
+      candidates = $entries
+    }
+    $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
+    $relativeRoutePath = "routes/task-type/" + $fileName
   }
-  $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
-  $relativeRoutePath = "routes/task-type/" + $fileName
   $shortlistPath = Join-Path $taskShortlistsDir $fileName
   $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
   $shortlistObject = [pscustomobject]@{
@@ -708,7 +723,7 @@ foreach ($task in $taskValues) {
 }
 $routeSummary.task_type = @($routeSummary.task_type | Sort-Object @{ Expression = "count"; Descending = $true }, name)
 $routeSummary.task_type | ForEach-Object {
-  $routeSummaryLines.Add(('- `{0}`: {1} -> `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $_.file, $_.shortlist_file, $_.shortlist_count))
+  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $(if ($_.file) { $_.file } else { "not generated" }), $_.shortlist_file, $_.shortlist_count))
 }
 $routeSummaryLines.Add("")
 

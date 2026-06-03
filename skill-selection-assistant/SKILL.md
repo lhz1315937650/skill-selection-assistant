@@ -212,7 +212,7 @@ The scanner should:
 6. Write `.skill-index/parsed-skills-cache.json` for unchanged-file parse reuse.
 7. Write `.skill-index/skills-categories.md`.
 8. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
-9. Write category-specific route files under `.skill-index/routes/`.
+9. Write category-specific route files under `.skill-index/routes/` only when `-IncludeFullRoutes` is used for audits.
 10. Write category-specific shortlist files under `.skill-index/shortlists/`.
 11. Write or preserve `.skill-index/selection-memory.md`.
 
@@ -228,7 +228,7 @@ Do not read every local skill before recommendation. Always use a route-first wo
 2. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
 3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
 4. Choose the most relevant shortlist from `.skill-index/shortlists/primary-domain/`, `.skill-index/shortlists/domain-detail/`, or `.skill-index/shortlists/task-type/`.
-5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient.
+5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient; they are generated only when the scanner is run with `-IncludeFullRoutes`.
 6. Shortlist the best `1-3` candidates from selector output or shortlist metadata.
 7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
 8. Never load the full `.skill-index/skills-index.json` unless route files are missing, stale, or insufficient.
