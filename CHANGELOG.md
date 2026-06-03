@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.8 - 2026-06-03
+
+- clarified the boundary between the installed router skill and the downloader's scanned local skill library
+- added `IndexScope` and `SkillInstanceDir` to scanner output, while keeping `SkillsRoot` as the scanned user skill library
+- documented that publisher-local skill counts, timings, paths, and indexes are development observations only
+- extended smoke tests to verify that route summaries declare the per-user index scope and distinguish skill instance from scanned root
+
 ## v1.5.7 - 2026-06-03
 
 - made full route file generation optional through `scan-local-skills.ps1 -IncludeFullRoutes`

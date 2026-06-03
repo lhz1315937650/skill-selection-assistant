@@ -2,6 +2,16 @@
 
 `skill-selection-assistant` is intended to make a user's local Codex skill library self-growing.
 
+## Scope boundary
+
+The published repository contains the router skill. It does not contain or define the downloader's full skill library.
+
+- `SkillInstanceDir` is the installed `skill-selection-assistant` folder.
+- `SkillsRoot` is the current user's local Codex skills directory.
+- `.skill-index/` is generated beside the router skill, but it describes the user's own `SkillsRoot`.
+
+The publisher's local skill count, categories, benchmark timings, and generated indexes are development observations only. They are not assumptions for downloaders.
+
 ## What self-growing means
 
 The skill library should not stay as a static list of folders. It should continuously improve through:

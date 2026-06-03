@@ -589,6 +589,8 @@ $ShortlistLimit = 200
 
 $routeSummary = [ordered]@{
   generated_at = $index.generated_at
+  index_scope = "installing-user-local-skills"
+  skill_instance_dir = $skillDir
   skills_root = $skillsRootResolved
   raw_total = $rawItems.Count
   total = $items.Count
@@ -780,6 +782,8 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
 }
 
 [pscustomobject]@{
+  IndexScope = "installing-user-local-skills"
+  SkillInstanceDir = $skillDir
   SkillsRoot = $skillsRootResolved
   OutputDir = (Resolve-Path -LiteralPath $OutputDir).Path
   RawTotal = $rawItems.Count

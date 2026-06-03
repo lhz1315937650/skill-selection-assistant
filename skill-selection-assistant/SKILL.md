@@ -39,6 +39,16 @@ Therefore:
 
 Never define published behavior in a way that requires a hardcoded machine-specific path such as `C:\Users\Administrator\.codex\skills`.
 
+## Scope Boundary
+
+Distinguish the router skill from the skill library it scans:
+
+- `SkillInstanceDir` is the installed `skill-selection-assistant` folder that contains this `SKILL.md`, scripts, and generated `.skill-index/`.
+- `SkillsRoot` is the current user's own local Codex skills directory.
+- The generated `.skill-index/` is stored beside this router skill, but it describes `SkillsRoot`, not the publisher's development machine.
+
+Never assume the downloader has the same number, names, categories, or paths of skills as the publisher. Every install must classify that user's actual local skill library.
+
 ## When To Use
 
 Use this skill when:
@@ -215,6 +225,8 @@ The scanner should:
 9. Write category-specific route files under `.skill-index/routes/` only when `-IncludeFullRoutes` is used for audits.
 10. Write category-specific shortlist files under `.skill-index/shortlists/`.
 11. Write or preserve `.skill-index/selection-memory.md`.
+
+The scanner output should keep `SkillInstanceDir` and `SkillsRoot` separate so users can see which router skill instance produced the index and which local skill library was scanned.
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 

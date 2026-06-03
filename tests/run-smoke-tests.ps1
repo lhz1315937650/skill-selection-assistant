@@ -40,9 +40,12 @@ try {
 
   $index = Read-Json -Path $indexPath
   $manifest = Read-Json -Path $manifestPath
+  $summary = Read-Json -Path $summaryPath
   Assert-True ([int]$index.raw_total -eq 7) "raw_total should be 7"
   Assert-True ([int]$index.total -eq 6) "total should preserve same-name variants and merge exact duplicates"
   Assert-True ([int]$index.duplicates_removed -eq 1) "duplicates_removed should be 1"
+  Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
+  Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
   Assert-True ($manifest.cache_file -eq "parsed-skills-cache.json") "manifest should point to parse cache"
   Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
 

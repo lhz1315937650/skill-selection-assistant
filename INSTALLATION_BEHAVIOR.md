@@ -24,6 +24,17 @@ C:\Users\<YourUser>\.codex\skills
 
 That example is documentation only. It is not a hardcoded runtime default.
 
+## Two Different Local Paths
+
+Do not confuse these two paths:
+
+- `SkillInstanceDir`: where this `skill-selection-assistant` skill is installed.
+- `SkillsRoot`: the installing user's full local Codex skill library that should be scanned and classified.
+
+The generated `.skill-index/` belongs to the installed router skill instance, but its contents describe the installing user's own `SkillsRoot`.
+
+The publisher may have a large local skill library during development. A downloader may have a much smaller or completely different library. Published behavior must work for both.
+
 ## What Must Not Happen
 
 Published behavior must not:
