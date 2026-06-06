@@ -121,6 +121,8 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/infer
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web
 ```
 
+By default, recommendations use a dynamic score window instead of a fixed `1-3` count. Tune `-MaxRecommendations`, `-ScoreWindow`, and `-MinRelevanceScore` when a local skill library is very large or contains many near-duplicate skills. `-MinRelevanceScore` filters dynamic recommendations that do not directly match enough useful query words, while explicit `-Limit` still works as a manual override.
+
 ## Self-Growing Skill Library
 
 This skill is intended to make the whole local skill library self-growing:
@@ -207,6 +209,7 @@ skill-selection-assistant/
 |-- SELF_GROWTH.md
 |-- scripts/
 |   |-- clean-local-artifacts.ps1
+|   |-- install-skill.py
 |   |-- install-skill.ps1
 |   `-- package-release.ps1
 |-- tests/
@@ -232,13 +235,26 @@ skill-selection-assistant/
 
 ## Install
 
-Recommended quick install:
+Recommended cross-platform quick install:
+
+```bash
+python scripts/install-skill.py
+```
+
+On Windows, the PowerShell installer is also supported:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
 This copies the router skill into your local Codex skills directory and runs the first local scan. Re-run with `-Force` when updating an existing installation.
+
+For Python installs, use `--force` when updating and `--skip-scan` if PowerShell/pwsh is not available yet:
+
+```bash
+python scripts/install-skill.py --force
+python scripts/install-skill.py --skip-scan
+```
 
 After installation, you can diagnose the local setup:
 
@@ -342,6 +358,10 @@ powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
 This cleanup script only removes this repository's `dist/` folder and this router skill's local `.skill-index/`; it does not touch any user's real skills root.
 
 To install the skill into a local Codex skills directory and run the first scan:
+
+```bash
+python scripts/install-skill.py
+```
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1

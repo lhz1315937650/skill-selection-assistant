@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.11 - 2026-06-06
+
+- added `scripts/install-skill.py` as a cross-platform installer for users who are not on Windows PowerShell-first setups
+- added a dynamic recommendation relevance gate through `MinRelevanceScore` so broad route shortlists do not include high-scoring but weakly related candidates by default
+- documented cross-platform install commands and recommendation tuning knobs
+- extended smoke tests to verify the Python installer is included and can copy the skill package
+
 ## v1.5.10 - 2026-06-06
 
 - added `README.zh-CN.md`, a Chinese project introduction for GitHub readers

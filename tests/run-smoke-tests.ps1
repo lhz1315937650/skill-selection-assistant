@@ -24,6 +24,7 @@ $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recomm
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
 $installScript = Join-Path $repoRoot "scripts\install-skill.ps1"
+$pythonInstallScript = Join-Path $repoRoot "scripts\install-skill.py"
 $cleanScript = Join-Path $repoRoot "scripts\clean-local-artifacts.ps1"
 $packageScript = Join-Path $repoRoot "scripts\package-release.ps1"
 $rulesPath = Join-Path $repoRoot "skill-selection-assistant\rules\categories.json"
@@ -100,7 +101,7 @@ try {
   Assert-True ($projectRecommendation.route.category -eq "coding-general") "project-structure query should infer coding-general"
   Assert-True (@("project-helper", "readme-maintainer", "repo-cleanup-helper") -contains $projectRecommendation.selection.candidates[0].name) "project workspace skills should outrank generic coding skills"
 
-  $dynamicRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
+  $dynamicRecommendation = (& $recommendScript -Query "organize this bot repo project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
   Assert-True ($dynamicRecommendation.selection.recommendation_policy.mode -eq "dynamic_score_window") "omitting -Limit should use dynamic score-window recommendations"
   Assert-True ([int]$dynamicRecommendation.selection.returned -gt 3) "dynamic recommendations should be able to return more than 3 candidates"
   Assert-True ([int]$dynamicRecommendation.selection.returned -le 6) "dynamic recommendations should respect MaxRecommendations"
@@ -138,6 +139,12 @@ try {
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest "SKILL.md")) "installer should copy SKILL.md"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\route-summary.json")) "installer should run first scan"
 
+  Assert-True (Test-Path -LiteralPath $pythonInstallScript) "install-skill.py should exist"
+  $pythonInstallDest = Join-Path $outputRoot "python-installed\skills\skill-selection-assistant"
+  $pythonInstallResult = (& python $pythonInstallScript --destination $pythonInstallDest --skills-root $skillRoot --skip-scan --force | Out-String | ConvertFrom-Json)
+  Assert-True ($pythonInstallResult.status -eq "installed") "install-skill.py should report installed"
+  Assert-True (Test-Path -LiteralPath (Join-Path $pythonInstallDest "SKILL.md")) "Python installer should copy SKILL.md"
+
   $selfOnlyRoot = Join-Path $outputRoot "self-only\skills"
   $selfOnlyDest = Join-Path $selfOnlyRoot "skill-selection-assistant"
   $selfOnlyInstall = (& $installScript -Destination $selfOnlyDest -SkillsRoot $selfOnlyRoot -Force | Out-String | ConvertFrom-Json)
@@ -164,6 +171,8 @@ try {
     Assert-True ($zhReadmeEntries.Count -eq 1) "package zip should include README.zh-CN.md"
     $installEntries = @($archive.Entries | Where-Object { $_.FullName -like "*scripts*install-skill.ps1" })
     Assert-True ($installEntries.Count -eq 1) "package zip should include install-skill.ps1"
+    $pythonInstallEntries = @($archive.Entries | Where-Object { $_.FullName -like "*scripts*install-skill.py" })
+    Assert-True ($pythonInstallEntries.Count -eq 1) "package zip should include install-skill.py"
     $doctorEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*doctor.ps1" })
     Assert-True ($doctorEntries.Count -eq 1) "package zip should include doctor.ps1"
   }

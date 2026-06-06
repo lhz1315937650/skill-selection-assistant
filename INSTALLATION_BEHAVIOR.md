@@ -47,9 +47,15 @@ Published behavior must not:
 
 The project now includes an optional installer that copies the router skill into the user's local Codex skills directory and runs the first scan:
 
+```bash
+python scripts/install-skill.py
+```
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
+
+The Python installer is the preferred cross-platform entry point. It copies the router skill on any platform with Python available. If PowerShell/pwsh is available, it can also run the first scan; otherwise, users can install first and scan later.
 
 It also includes a first-use / install-time scanner:
 

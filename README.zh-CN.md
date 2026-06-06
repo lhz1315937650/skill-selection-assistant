@@ -40,13 +40,26 @@ Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系
 
 ## 推荐安装方式
 
-推荐使用一键安装脚本：
+推荐跨平台安装方式：
+
+```bash
+python scripts/install-skill.py
+```
+
+Windows 用户也可以继续使用 PowerShell 安装脚本：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
 它会把 `skill-selection-assistant/` 安装到你的 Codex skills 目录，并自动执行第一次本地扫描。已有安装时，可以加 `-Force` 更新路由器 skill，同时保留本地运行时索引。
+
+如果使用 Python 安装器，更新时使用 `--force`；如果当前环境还没有 PowerShell/pwsh，可以先用 `--skip-scan` 只完成复制安装：
+
+```bash
+python scripts/install-skill.py --force
+python scripts/install-skill.py --skip-scan
+```
 
 安装后，可以运行诊断脚本检查本地设置：
 
@@ -88,6 +101,7 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recom
 
 - 先确定任务分类，再读取对应分类候选，不读取全量技能。
 - 根据候选权重动态推荐，不再硬性限制为 1-3 个；强匹配可以少推荐，分数接近时可以多推荐。
+- 默认动态推荐会用 `MinRelevanceScore` 过滤偏题候选，避免大库里“分数高但和当前任务关系弱”的 skill 混进来。
 - 推荐说明使用用户当前对话的语言。
 
 ## 本地生成的索引文件
