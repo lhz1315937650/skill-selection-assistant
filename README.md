@@ -3,6 +3,8 @@
 [![Release](https://img.shields.io/github/v/release/lhz1315937650/skill-selection-assistant)](https://github.com/lhz1315937650/skill-selection-assistant/releases)
 [![License](https://img.shields.io/github/license/lhz1315937650/skill-selection-assistant)](./LICENSE)
 
+[中文介绍](./README.zh-CN.md) | English
+
 A Codex skill that turns a large local skill library into a cleaner, more predictable user experience.
 
 Instead of jumping straight into execution, it checks the user's local skills first, recommends the best matching options in the user's own language, asks which one to use, keeps that choice active across the rest of the conversation when the workflow still fits, and asks before any environment setup or user-owned configuration.

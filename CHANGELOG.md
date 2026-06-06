@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.10 - 2026-06-06
+
+- added `README.zh-CN.md`, a Chinese project introduction for GitHub readers
+- linked the Chinese introduction from the English README
+- clarified the published package boundary: this repo ships portable router logic, not any author's local skill index or private skill library
+
 ## v1.5.9 - 2026-06-03
 
 - fixed garbled Chinese display metadata in `skill-selection-assistant/agents/openai.yaml`
