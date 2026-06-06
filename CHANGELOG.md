@@ -7,6 +7,18 @@ All notable changes to this project will be documented in this file.
 - added `README.zh-CN.md`, a Chinese project introduction for GitHub readers
 - linked the Chinese introduction from the English README
 - clarified the published package boundary: this repo ships portable router logic, not any author's local skill index or private skill library
+- added `record-selection-memory.ps1` so selection outcomes, missed matches, setup failures, and overlap notes can be recorded into the installing user's local `.skill-index/selection-memory.md`
+- reduced recommendation JSON noise by emitting variant details only when multiple same-name variants exist
+- documented the executable self-growth memory update flow in the skill instructions and self-growth guide
+- added `scripts/install-skill.ps1` for first-time installation into a user's local Codex skills directory
+- changed `recommend-skills.ps1` to build the local index automatically when the first-use `.skill-index/route-summary.json` is missing
+- included `README.zh-CN.md` in release packages and fixed published Chinese agent metadata
+- added `doctor.ps1` to diagnose first installs and rebuild missing local route summaries with `-Fix`
+- made local selection memory influence future shortlist ranking through per-user boosts and penalties
+- fixed self-only installs so the router skill excludes its own `SKILL.md` from recommendation candidates
+- improved Chinese query candidate matching with CJK bigram tokens
+- improved Chinese project/workspace routing and boosted project-local skills so they are not buried by large generic skill libraries
+- changed recommendation selection from a hardcoded `1-3` default to a dynamic score-window policy with an explicit `-Limit` override
 
 ## v1.5.9 - 2026-06-03
 

@@ -39,13 +39,19 @@ The publisher may have a large local skill library during development. A downloa
 
 Published behavior must not:
 
-- scan `C:\Users\Administrator\.codex\skills` as a product default
+- scan a publisher-specific path such as `C:\Users\<PublisherUser>\.codex\skills` as a product default
 - depend on the publisher's username or filesystem layout
 - assume that all users installed the same set of skills
 
 ## Future Offline Indexing Direction
 
-The project now includes an optional first-use / install-time scanner:
+The project now includes an optional installer that copies the router skill into the user's local Codex skills directory and runs the first scan:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
+```
+
+It also includes a first-use / install-time scanner:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-local-skills.ps1
@@ -66,7 +72,17 @@ The intended behavior is:
 3. build a lightweight local catalog of installed skills
 4. use that catalog only as a portable per-user runtime aid
 
+If `recommend-skills.ps1` is run before an index exists, it should build the local index automatically with the portable scanner instead of failing immediately.
+
 The catalog should reflect the user's actual installed skills, because every user's local skill set may be different.
+
+If `recommend-skills.ps1` is run before an index exists, it should build the local index automatically with the portable scanner instead of failing immediately.
+
+Users can also diagnose and repair a first install with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
+```
 
 ## Self-Growing Direction
 

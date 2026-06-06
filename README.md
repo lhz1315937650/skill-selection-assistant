@@ -27,7 +27,7 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 - inspects the user's local skill library before continuing with a normal request
 - optionally scans the local skills root on install or first use
 - classifies skills by origin, domain, task type, output type, setup level, and status
-- recommends only the best `1-3` matching skills
+- recommends a weighted shortlist instead of a hardcoded number of skills
 - explains each match briefly in the same language the user used
 - asks the user which skill to use before continuing
 - keeps the user's chosen skill active for later turns in the same conversation when the workflow still fits
@@ -43,7 +43,7 @@ This repository is meant to be installed by different users in different Codex e
 That means:
 
 - the skill must reason about the user's own local skill installation, not the publisher's machine
-- published behavior must not depend on a hardcoded path such as `C:\Users\Administrator\.codex\skills`
+- published behavior must not depend on a publisher-specific path such as `C:\Users\<PublisherUser>\.codex\skills`
 - runtime path resolution should use the user's Codex environment, typically `$CODEX_HOME/skills`
 
 Windows paths shown in this repository are examples only. They are not product defaults.
@@ -116,9 +116,9 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-
 You can ask the one-command recommender to infer a route and return a small shortlist:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "build a frontend UI" -Limit 3
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "build a frontend UI"
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/infer-route.ps1 -Query "build a frontend UI"
-powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web -Limit 12
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/select-route-candidates.ps1 -Query "build a frontend UI" -RouteType domain_detail -Category frontend-web
 ```
 
 ## Self-Growing Skill Library
@@ -140,8 +140,14 @@ The intended default is route-first selection:
 1. infer category
 2. run `recommend-skills.ps1`, or run `select-route-candidates.ps1` against the inferred category
 3. read `route-summary` and one shortlist only if scripts are unavailable
-4. recommend `1-3` skills
+4. recommend the weighted shortlist returned by the selector; this may be one strong candidate or several close candidates
 5. read actual `SKILL.md` files only after shortlisting or user choice
+
+After the user chooses a skill or reports a missed match, record the feedback locally:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/record-selection-memory.ps1 -Query "build a frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType domain_detail -Category frontend-web
+```
 
 ## Example Flow
 
@@ -154,7 +160,7 @@ Read the Markdown files in this folder.
 Assistant:
 
 - checks local skills first
-- recommends the most relevant `1-3` skills
+- recommends the weighted shortlist of relevant skills
 - explains them briefly in the user's language
 - asks which one to use
 
@@ -201,6 +207,7 @@ skill-selection-assistant/
 |-- SELF_GROWTH.md
 |-- scripts/
 |   |-- clean-local-artifacts.ps1
+|   |-- install-skill.ps1
 |   `-- package-release.ps1
 |-- tests/
 |   |-- run-smoke-tests.ps1
@@ -211,7 +218,9 @@ skill-selection-assistant/
 `-- skill-selection-assistant/
     |-- SKILL.md
     |-- scripts/
+    |   |-- doctor.ps1
     |   |-- infer-route.ps1
+    |   |-- record-selection-memory.ps1
     |   |-- recommend-skills.ps1
     |   |-- scan-local-skills.ps1
     |   `-- select-route-candidates.ps1
@@ -223,7 +232,21 @@ skill-selection-assistant/
 
 ## Install
 
-Copy the `skill-selection-assistant/` folder from this repository into your local Codex skills directory.
+Recommended quick install:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
+```
+
+This copies the router skill into your local Codex skills directory and runs the first local scan. Re-run with `-Force` when updating an existing installation.
+
+After installation, you can diagnose the local setup:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
+```
+
+Manual install is also supported. Copy the `skill-selection-assistant/` folder from this repository into your local Codex skills directory.
 
 Typical path:
 
@@ -261,6 +284,8 @@ The smoke test uses a tiny fixture skill library and verifies:
 - stale route and shortlist cleanup on rescan
 - route inference for frontend and academic requests
 - one-command recommendation through `recommend-skills.ps1`
+- local self-growth memory recording through `record-selection-memory.ps1`
+- first-time install diagnostics and optional index repair through `doctor.ps1 -Fix`
 
 The same smoke test also runs in GitHub Actions on `main` pushes, pull requests, and manual workflow dispatch.
 
@@ -270,7 +295,7 @@ If you want this skill to run before normal requests, add a global instruction i
 
 1. inspect the local skills directory
 2. use `skill-selection-assistant` first
-3. recommend the best matching skills in the user's own language
+3. recommend the weighted matching skills in the user's own language
 4. ask the user to choose
 5. keep using that chosen skill for later turns in the same conversation unless a new skill is clearly needed
 6. ask again only when the later turn clearly needs a different skill
@@ -284,7 +309,7 @@ Before answering each new normal request:
 
 1. Inspect the local skill library.
 2. Use `skill-selection-assistant` first.
-3. Match the best 1-3 local skills.
+3. Match the best weighted local skills.
 4. Briefly explain them in the same language the user used.
 5. Ask the user which skill to use before continuing.
 6. After the user chooses a skill, keep using it for later turns in the same conversation unless a new skill is clearly needed.
@@ -298,6 +323,7 @@ Before answering each new normal request:
 You can edit:
 
 - `skill-selection-assistant/SKILL.md` to change the routing behavior and wording
+- `skill-selection-assistant/scripts/doctor.ps1` to adjust first-time install diagnostics
 - `skill-selection-assistant/scripts/infer-route.ps1` to adjust request-to-category inference
 - `skill-selection-assistant/scripts/recommend-skills.ps1` to adjust the one-command recommendation wrapper
 - `skill-selection-assistant/scripts/scan-local-skills.ps1` to adjust portable scanning and classification
@@ -314,6 +340,12 @@ powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
 ```
 
 This cleanup script only removes this repository's `dist/` folder and this router skill's local `.skill-index/`; it does not touch any user's real skills root.
+
+To install the skill into a local Codex skills directory and run the first scan:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
+```
 
 To build a release zip, use the packaging script instead of manually copying folders:
 

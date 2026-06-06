@@ -1,6 +1,6 @@
 ---
 name: skill-selection-assistant
-description: Detect the most relevant local Codex skills for the current user request, introduce the best 1-3 options in the same language the user used, ask the user which skill to use, and confirm before any required environment download, installation, or user-specific prerequisite configuration.
+description: Detect the most relevant local Codex skills for the current user request, introduce a weighted shortlist in the same language the user used, ask the user which skill to use, and confirm before any required environment download, installation, or user-specific prerequisite configuration.
 metadata:
   short-description: Match local skills and ask the user to choose
 ---
@@ -16,7 +16,7 @@ Before solving the user's request:
 1. Inspect local skills under the user's Codex skills directory.
 2. On install, update, or first use, scan and classify local skills into a lightweight multi-level index.
 3. Find the smallest useful set of relevant skills.
-4. Prefer the best `1-3` skills instead of dumping a long list.
+4. Prefer a weighted shortlist instead of dumping a long list.
 5. Introduce the matched skills in the same language the user used for the request.
 6. Ask the user which skill they want to use.
 7. If a selected skill may require downloading or installing dependencies, ask the user for confirmation before starting the setup.
@@ -37,7 +37,7 @@ Therefore:
 - treat `$CODEX_HOME/skills` as the typical portable skills root
 - treat platform-specific paths only as examples for documentation
 
-Never define published behavior in a way that requires a hardcoded machine-specific path such as `C:\Users\Administrator\.codex\skills`.
+Never define published behavior in a way that requires a hardcoded machine-specific path such as `C:\Users\<PublisherUser>\.codex\skills`.
 
 ## Scope Boundary
 
@@ -74,7 +74,7 @@ Treat the user's first confirmed skill choice in a conversation as the active sk
 On later turns:
 
 - If the new request still fits the active skill, continue without re-running skill selection.
-- If the new request clearly needs a different skill, briefly surface the best `1-3` new options and ask the user to choose again.
+- If the new request clearly needs a different skill, briefly surface the best weighted options and ask the user to choose again.
 - If the user explicitly switches skills, follow the new choice and treat it as the active skill from that point onward.
 - If the user explicitly says to answer directly or not use a skill, do not force the prior active skill.
 
@@ -87,7 +87,10 @@ Use a practical standard when deciding whether a new skill is involved:
 
 Select only the smallest useful set.
 
-- Prefer `1-3` skills.
+- Prefer the returned weighted shortlist from the selector.
+- Do not hardcode the visible recommendation count to `1-3`.
+- If scores are close or the task naturally spans multiple workflows, it is acceptable to recommend more candidates.
+- Keep a practical cap, usually no more than `8`, unless the user explicitly asks for a longer list.
 - If the user explicitly names a skill, include it first.
 - If nothing is clearly relevant, say that no strong skill match was found and ask whether to answer directly.
 - Prefer practical fit over theoretical fit.
@@ -116,7 +119,7 @@ Keep each skill explanation short and practical, ideally one sentence per skill.
 Recommended pattern:
 
 1. Briefly say you matched the most relevant local skills.
-2. List the best `1-3` skills.
+2. List the weighted shortlist returned by the selector.
 3. Give one short practical explanation for each skill.
 4. Ask which skill the user wants to use.
 5. Optionally mention that you can also answer directly without using the selection step.
@@ -232,6 +235,12 @@ The scanner and route inference should load shared classification rules from `ru
 
 If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
 
+For first-install diagnostics or a broken local index, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/doctor.ps1 -Fix
+```
+
 The generated index is a recommendation view, not a destructive filesystem operation. It may merge duplicate names in the index while keeping all real local skill files untouched.
 
 ## Token-Saving Route-First Selection
@@ -243,16 +252,16 @@ Do not read every local skill before recommendation. Always use a route-first wo
 3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
 4. Choose the most relevant shortlist from `.skill-index/shortlists/primary-domain/`, `.skill-index/shortlists/domain-detail/`, or `.skill-index/shortlists/task-type/`.
 5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient; they are generated only when the scanner is run with `-IncludeFullRoutes`.
-6. Shortlist the best `1-3` candidates from selector output or shortlist metadata.
+6. Shortlist candidates according to selector scores and the returned `recommendation_policy`.
 7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
 8. Never load the full `.skill-index/skills-index.json` unless route files are missing, stale, or insufficient.
 
 Selector command pattern:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>" -Limit 3
+powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user request>"
-powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web -Limit 12
+powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web
 ```
 
 If multiple categories are plausible, prefer the narrowest high-confidence `domain_detail` route. If the request is broad or ambiguous, use `primary_domain` first, then refine with `task_type`.
@@ -290,7 +299,7 @@ At the beginning of a normal project conversation:
 6. Read only the matching shortlist file if the selector is unavailable.
 7. Match compact route candidates by semantic fit, not only keywords.
 8. Prefer exact workflow fit, `primary_domain`, and `domain_detail` over broad keyword overlap.
-9. Recommend only `1-3` skills.
+9. Recommend the weighted shortlist returned by the selector; do not force a fixed `1-3` count.
 10. Use the user's language for the recommendation.
 11. Keep each recommendation concise: skill name plus one short practical reason.
 12. Ask which skill to use, unless a skip condition applies.
@@ -327,6 +336,12 @@ After each selection or skill-management session:
 4. If several skills overlap heavily, suggest linking, merging, or marking one as `needs-review`.
 5. If a skill requires setup and that setup fails, record the failure pattern for future warnings.
 6. If a new skill appears in the local skills root, re-run the scanner and update the category map.
+
+Use the memory recorder after a user chooses, rejects, or reports a missed match:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/record-selection-memory.ps1 -Query "<user request>" -Outcome selected -SelectedSkill "<skill name>" -RouteType domain_detail -Category "<category>"
+```
 
 Do not directly delete or rewrite unrelated local skills. Default to producing recommendations, indexes, and draft improvements.
 

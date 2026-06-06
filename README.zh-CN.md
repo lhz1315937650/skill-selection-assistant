@@ -1,6 +1,6 @@
 # Skill Selection Assistant 中文介绍
 
-Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系统的“技能选择路由器”。它的目标不是替用户预置一套固定技能库，而是在安装后扫描使用者自己电脑里的 skills，根据真实任务先判断领域分类，再只读取对应分类下的候选技能，最后用用户当前对话的语言给出 1-3 个简洁推荐。
+Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系统的“技能选择路由器”。它的目标不是替用户预置一套固定技能库，而是在安装后扫描使用者自己电脑里的 skills，根据真实任务先判断领域分类，再只读取对应分类下的候选技能，最后按候选权重用用户当前对话的语言给出简洁推荐。
 
 这样做的核心价值是：减少 token 浪费、避免一次性读取全部技能、降低误触发下载或环境安装的风险，并让大型 skill 仓库可以逐步自我整理、自我校准。
 
@@ -21,7 +21,7 @@ Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系
 2. 根据 `SKILL.md` 的名称、描述、路径、关键词和触发规则生成多级分类。
 3. 对用户当前对话做意图识别，先确定最可能的一级 / 二级领域。
 4. 只读取该领域下的候选技能 shortlist。
-5. 用用户当前对话语言推荐 1-3 个最相关技能，并简短说明用途。
+5. 用用户当前对话语言推荐权重最高的一组相关技能，并简短说明用途。
 6. 如果候选技能可能需要安装运行时、依赖、模型、工具链或账号配置，先提醒用户并等待确认。
 7. 用户选择后，将该 skill 作为当前会话的 active skill。
 8. 后续对话如果仍属于同一工作流，则继续沿用该 skill，避免重复选择。
@@ -39,6 +39,24 @@ Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系
 这也是项目最重要的可移植性要求：发布包只提供“如何扫描、分类、路由和推荐”的能力，不携带某一台电脑上的私有索引。
 
 ## 推荐安装方式
+
+推荐使用一键安装脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
+```
+
+它会把 `skill-selection-assistant/` 安装到你的 Codex skills 目录，并自动执行第一次本地扫描。已有安装时，可以加 `-Force` 更新路由器 skill，同时保留本地运行时索引。
+
+安装后，可以运行诊断脚本检查本地设置：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
+```
+
+`-Fix` 会在索引缺失时自动补跑扫描，适合第一次安装后排查问题。
+
+也可以手动安装。
 
 把仓库中的 `skill-selection-assistant/` 文件夹复制到你的 Codex skills 目录中，例如：
 
@@ -63,13 +81,13 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-
 你可以用下面命令测试一次技能推荐：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "帮我做一个前端页面" -Limit 3
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "帮我做一个前端页面"
 ```
 
 推荐结果应当遵循三个原则：
 
 - 先确定任务分类，再读取对应分类候选，不读取全量技能。
-- 推荐 1-3 个最相关技能，而不是列出一大堆候选。
+- 根据候选权重动态推荐，不再硬性限制为 1-3 个；强匹配可以少推荐，分数接近时可以多推荐。
 - 推荐说明使用用户当前对话的语言。
 
 ## 本地生成的索引文件
@@ -95,6 +113,14 @@ Skill Selection Assistant 的自增长不是自动替用户乱改技能，而是
 - 哪些分类 shortlist 太大，需要进一步拆分以节省 token。
 
 随着使用次数增加，它会更清楚“先看哪个分类、读取哪些候选、什么时候需要提醒用户确认环境安装”。
+
+当用户选择了某个 skill，或者发现推荐不准时，可以把这次反馈记录到本地记忆：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/record-selection-memory.ps1 -Query "帮我做一个前端页面" -Outcome selected -SelectedSkill "frontend-design" -RouteType domain_detail -Category frontend-web
+```
+
+这份本地记忆会参与后续排序：经常被选择的 skill 会被适度加权，经常被拒绝或安装失败的 skill 会被降权，从而减少重复错配和无效 token 消耗。
 
 ## 开发与发布检查
 
