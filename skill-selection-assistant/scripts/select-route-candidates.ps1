@@ -12,6 +12,7 @@ param(
   [int]$MaxRecommendations = 8,
   [int]$MinRecommendations = 1,
   [int]$ScoreWindow = 3,
+  [int]$MinRelevanceScore = 2,
   [string]$IndexDir = "",
   [switch]$UseFullRoute,
   [switch]$KeepVariants
@@ -41,6 +42,26 @@ function Get-TokenList {
     }
   }
   return @($tokens | Sort-Object -Unique)
+}
+
+function Get-UsefulQueryTokens {
+  param([string[]]$Tokens)
+
+  $stopTokens = @(
+    "the", "and", "for", "with", "this", "that", "into", "from", "using",
+    "use", "make", "create", "build", "write", "organize", "please", "help"
+  )
+
+  return @(
+    $Tokens |
+      Where-Object {
+        $token = [string]$_
+        (-not [string]::IsNullOrWhiteSpace($token)) -and
+          $token.Length -ge 2 -and
+          ($stopTokens -notcontains $token)
+      } |
+      Sort-Object -Unique
+  )
 }
 
 function Get-OriginBoost {
@@ -156,7 +177,9 @@ if (-not (Test-Path -LiteralPath $routePath)) {
 }
 
 $route = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 | ConvertFrom-Json
+$queryTokens = Get-TokenList -Text $Query
 $tokens = Get-TokenList -Text ($Query + " " + $Category)
+$usefulQueryTokens = Get-UsefulQueryTokens -Tokens $queryTokens
 $categoryTokens = Get-TokenList -Text $Category
 $memoryScores = Import-SelectionMemoryScores -Path (Join-Path $IndexDir "selection-memory.md") -Category $Category
 $queryLower = $Query.ToLowerInvariant()
@@ -189,10 +212,17 @@ $scored = foreach ($candidate in @($route.candidates)) {
   $haystack = $haystack.ToLowerInvariant()
 
   $score = Get-OriginBoost -Origin $candidate.origin
+  $relevanceScore = 0
   foreach ($token in $tokens) {
     if ($candidate.name.ToLowerInvariant() -eq $token) { $score += 30 }
     elseif ($candidate.name.ToLowerInvariant().Contains($token)) { $score += 12 }
     elseif ($haystack.Contains($token)) { $score += 4 }
+  }
+
+  foreach ($token in $usefulQueryTokens) {
+    if ($candidate.name.ToLowerInvariant().Contains($token)) { $relevanceScore += 4 }
+    elseif ([string]$candidate.relative_path -and ([string]$candidate.relative_path).ToLowerInvariant().Contains($token)) { $relevanceScore += 3 }
+    elseif ($haystack.Contains($token)) { $relevanceScore += 1 }
   }
 
   foreach ($token in $categoryTokens) {
@@ -240,6 +270,7 @@ $scored = foreach ($candidate in @($route.candidates)) {
     setup_level = $candidate.setup_level
     origin = $candidate.origin
     duplicate_count = $candidate.duplicate_count
+    relevance_score = $relevanceScore
     relative_path = $candidate.relative_path
     skill_md = $candidate.skill_md
   }
@@ -281,12 +312,16 @@ if ($Limit -gt 0) {
 else {
   $selectionMode = "dynamic_score_window"
   $top = @()
-  if ($sorted.Count -gt 0) {
-    $topScore = [int]$sorted[0].score
+  $eligible = @($sorted | Where-Object { [int]$_.relevance_score -ge $MinRelevanceScore })
+  if ($eligible.Count -eq 0) {
+    $eligible = $sorted
+  }
+  if ($eligible.Count -gt 0) {
+    $topScore = [int]$eligible[0].score
     $scoreThreshold = $topScore - $ScoreWindow
-    $top = @($sorted | Where-Object { [int]$_.score -ge $scoreThreshold } | Select-Object -First $MaxRecommendations)
+    $top = @($eligible | Where-Object { [int]$_.score -ge $scoreThreshold } | Select-Object -First $MaxRecommendations)
     if ($top.Count -lt $MinRecommendations) {
-      $top = @($sorted | Select-Object -First ([Math]::Min($MinRecommendations, $sorted.Count)))
+      $top = @($eligible | Select-Object -First ([Math]::Min($MinRecommendations, $eligible.Count)))
     }
   }
 }
@@ -306,6 +341,7 @@ else {
     min_recommendations = $MinRecommendations
     max_recommendations = $MaxRecommendations
     score_window = $ScoreWindow
+    min_relevance_score = $MinRelevanceScore
     score_threshold = $scoreThreshold
   }
   candidates = $top

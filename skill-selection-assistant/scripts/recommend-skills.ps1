@@ -6,6 +6,7 @@ param(
   [int]$MaxRecommendations = 8,
   [int]$MinRecommendations = 1,
   [int]$ScoreWindow = 3,
+  [int]$MinRelevanceScore = 2,
   [string]$IndexDir = "",
   [string]$SkillsRoot = ""
 )
@@ -130,6 +131,7 @@ if (-not $route.available) {
           min_recommendations = $MinRecommendations
           max_recommendations = $MaxRecommendations
           score_window = $ScoreWindow
+          min_relevance_score = $MinRelevanceScore
           score_threshold = $null
         }
         candidates = @()
@@ -151,10 +153,10 @@ if (-not $route.available) {
 }
 
 if ($Limit -gt 0) {
-  $selection = (& $selectScript -Query $Query -RouteType $route.route_type -Category $route.category -Limit $Limit -IndexDir $IndexDir -MaxRecommendations $MaxRecommendations -MinRecommendations $MinRecommendations -ScoreWindow $ScoreWindow | Out-String | ConvertFrom-Json)
+  $selection = (& $selectScript -Query $Query -RouteType $route.route_type -Category $route.category -Limit $Limit -IndexDir $IndexDir -MaxRecommendations $MaxRecommendations -MinRecommendations $MinRecommendations -ScoreWindow $ScoreWindow -MinRelevanceScore $MinRelevanceScore | Out-String | ConvertFrom-Json)
 }
 else {
-  $selection = (& $selectScript -Query $Query -RouteType $route.route_type -Category $route.category -IndexDir $IndexDir -MaxRecommendations $MaxRecommendations -MinRecommendations $MinRecommendations -ScoreWindow $ScoreWindow | Out-String | ConvertFrom-Json)
+  $selection = (& $selectScript -Query $Query -RouteType $route.route_type -Category $route.category -IndexDir $IndexDir -MaxRecommendations $MaxRecommendations -MinRecommendations $MinRecommendations -ScoreWindow $ScoreWindow -MinRelevanceScore $MinRelevanceScore | Out-String | ConvertFrom-Json)
 }
 
 [pscustomobject]@{

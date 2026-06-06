@@ -307,7 +307,7 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$OutputSchemaVersion = "1.5.10"
+$OutputSchemaVersion = "1.5.11"
 $ParserSchemaVersion = "1.0"
 $manifestPath = Join-Path $OutputDir "manifest.json"
 $parseCachePath = Join-Path $OutputDir "parsed-skills-cache.ndjson"
