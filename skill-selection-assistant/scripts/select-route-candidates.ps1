@@ -8,7 +8,10 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$Category,
 
-  [int]$Limit = 12,
+  [int]$Limit = 0,
+  [int]$MaxRecommendations = 8,
+  [int]$MinRecommendations = 1,
+  [int]$ScoreWindow = 3,
   [string]$IndexDir = "",
   [switch]$UseFullRoute,
   [switch]$KeepVariants
@@ -26,11 +29,18 @@ function Get-SafeFileName {
 function Get-TokenList {
   param([string]$Text)
   if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
-  return @(
+  $tokens = @(
     [regex]::Matches($Text.ToLowerInvariant(), "[\p{L}\p{N}_]{2,}") |
       ForEach-Object { $_.Value } |
       Sort-Object -Unique
   )
+  $cjk = -join ([regex]::Matches($Text, "[\u4e00-\u9fff]") | ForEach-Object { $_.Value })
+  if ($cjk.Length -ge 2) {
+    for ($i = 0; $i -le $cjk.Length - 2; $i++) {
+      $tokens += $cjk.Substring($i, 2)
+    }
+  }
+  return @($tokens | Sort-Object -Unique)
 }
 
 function Get-OriginBoost {
@@ -42,6 +52,72 @@ function Get-OriginBoost {
     "linked-external" { return 2 }
     default { return 0 }
   }
+}
+
+function Normalize-SkillName {
+  param([string]$Name)
+  return (($Name -replace "\s+", "-").Trim().ToLowerInvariant())
+}
+
+function Add-MemoryScore {
+  param([hashtable]$Scores, [string]$SkillName, [int]$Amount)
+  if ([string]::IsNullOrWhiteSpace($SkillName)) { return }
+  $key = Normalize-SkillName -Name $SkillName
+  if (-not $Scores.ContainsKey($key)) { $Scores[$key] = 0 }
+  $Scores[$key] += $Amount
+}
+
+function Import-SelectionMemoryScores {
+  param([string]$Path, [string]$Category)
+
+  $scores = @{}
+  if (-not (Test-Path -LiteralPath $Path)) { return $scores }
+
+  $currentOutcome = ""
+  $currentSkill = ""
+  $currentRoute = ""
+
+  function Commit-MemoryEntry {
+    if ([string]::IsNullOrWhiteSpace($currentSkill) -or [string]::IsNullOrWhiteSpace($currentOutcome)) { return }
+
+    $categoryMatches = $true
+    if (-not [string]::IsNullOrWhiteSpace($Category) -and -not [string]::IsNullOrWhiteSpace($currentRoute)) {
+      $categoryMatches = $currentRoute.Contains($Category)
+    }
+    $multiplier = $(if ($categoryMatches) { 1 } else { 0.5 })
+
+    switch ($currentOutcome) {
+      "selected" { Add-MemoryScore -Scores $scores -SkillName $currentSkill -Amount ([int](60 * $multiplier)) }
+      "rejected" { Add-MemoryScore -Scores $scores -SkillName $currentSkill -Amount ([int](-24 * $multiplier)) }
+      "setup-failed" { Add-MemoryScore -Scores $scores -SkillName $currentSkill -Amount ([int](-16 * $multiplier)) }
+      "missed" { Add-MemoryScore -Scores $scores -SkillName $currentSkill -Amount ([int](20 * $multiplier)) }
+    }
+  }
+
+  foreach ($line in Get-Content -LiteralPath $Path -Encoding UTF8) {
+    if ($line -match "^###\s+") {
+      Commit-MemoryEntry
+      $currentOutcome = ""
+      $currentSkill = ""
+      $currentRoute = ""
+      continue
+    }
+    if ($line -match '^- outcome:\s+`?([^`]+?)`?\s*$') {
+      $currentOutcome = $Matches[1].Trim()
+      continue
+    }
+    if ($line -match '^- selected_skill:\s+`?([^`]+?)`?\s*$') {
+      $currentSkill = $Matches[1].Trim()
+      continue
+    }
+    if ($line -match '^- route:\s+`?([^`]+?)`?\s*/\s*`?([^`]+?)`?\s*$') {
+      $currentRoute = ($Matches[1].Trim() + "/" + $Matches[2].Trim())
+      continue
+    }
+  }
+  Commit-MemoryEntry
+
+  return $scores
 }
 
 function New-UWord {
@@ -82,6 +158,7 @@ if (-not (Test-Path -LiteralPath $routePath)) {
 $route = Get-Content -LiteralPath $routePath -Raw -Encoding UTF8 | ConvertFrom-Json
 $tokens = Get-TokenList -Text ($Query + " " + $Category)
 $categoryTokens = Get-TokenList -Text $Category
+$memoryScores = Import-SelectionMemoryScores -Path (Join-Path $IndexDir "selection-memory.md") -Category $Category
 $queryLower = $Query.ToLowerInvariant()
 $wantsVisual = (
   $queryLower.Contains("ui") -or
@@ -127,6 +204,12 @@ $scored = foreach ($candidate in @($route.candidates)) {
   if ($candidate.primary_domain -eq $Category) { $score += 8 }
   if (@($candidate.task_type) -contains $Category) { $score += 5 }
   if ([int]$candidate.duplicate_count -gt 1) { $score += [Math]::Min([int]$candidate.duplicate_count, 6) }
+  if ($haystack -match "project|workspace|repo|repository|local") {
+    $score += 28
+  }
+  if ([string]$candidate.relative_path -notmatch "^(gh\d+|er\d+|baoyu-|composio-|awesome-|anthropic)") {
+    $score += 12
+  }
 
   if ($wantsVisual -and ($haystack -match "design|visual|interface|ui|frontend")) {
     $score += 18
@@ -138,11 +221,18 @@ $scored = foreach ($candidate in @($route.candidates)) {
     $score -= 12
   }
 
-  [pscustomobject]@{
+  $canonicalName = $(if ($candidate.PSObject.Properties.Name -contains "canonical_name") { $candidate.canonical_name } else { Normalize-SkillName -Name $candidate.name })
+  $memoryScore = 0
+  if ($memoryScores.ContainsKey($canonicalName)) {
+    $memoryScore = [int]$memoryScores[$canonicalName]
+    $score += $memoryScore
+  }
+
+  $candidateResult = [pscustomobject]@{
     score = $score
     origin_priority = Get-OriginBoost -Origin $candidate.origin
     name = $candidate.name
-    canonical_name = $(if ($candidate.PSObject.Properties.Name -contains "canonical_name") { $candidate.canonical_name } else { $candidate.name.ToLowerInvariant() })
+    canonical_name = $canonicalName
     reason_hint = $candidate.short_description
     primary_domain = $candidate.primary_domain
     domain_detail = $candidate.domain_detail
@@ -153,6 +243,10 @@ $scored = foreach ($candidate in @($route.candidates)) {
     relative_path = $candidate.relative_path
     skill_md = $candidate.skill_md
   }
+  if ($memoryScore -ne 0) {
+    $candidateResult | Add-Member -NotePropertyName memory_score -NotePropertyValue $memoryScore -Force
+  }
+  $candidateResult
 }
 
 if (-not $KeepVariants) {
@@ -161,22 +255,41 @@ if (-not $KeepVariants) {
     $group = @($_.Group)
     $best = $group | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | Select-Object -First 1
     $best | Add-Member -NotePropertyName merged_variant_count -NotePropertyValue $group.Count -Force
-    $best | Add-Member -NotePropertyName variants -NotePropertyValue @($group | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | ForEach-Object {
-      [pscustomobject]@{
-        score = $_.score
-        name = $_.name
-        origin = $_.origin
-        setup_level = $_.setup_level
-        relative_path = $_.relative_path
-        skill_md = $_.skill_md
-      }
-    }) -Force
+    if ($group.Count -gt 1) {
+      $best | Add-Member -NotePropertyName variants -NotePropertyValue @($group | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | ForEach-Object {
+        [pscustomobject]@{
+          score = $_.score
+          name = $_.name
+          origin = $_.origin
+          setup_level = $_.setup_level
+          relative_path = $_.relative_path
+          skill_md = $_.skill_md
+        }
+      }) -Force
+    }
     $merged += $best
   }
   $scored = $merged
 }
 
-$top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name | Select-Object -First $Limit)
+$sorted = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{ Expression = "origin_priority"; Descending = $true }, name)
+$selectionMode = "explicit_limit"
+$scoreThreshold = $null
+if ($Limit -gt 0) {
+  $top = @($sorted | Select-Object -First $Limit)
+}
+else {
+  $selectionMode = "dynamic_score_window"
+  $top = @()
+  if ($sorted.Count -gt 0) {
+    $topScore = [int]$sorted[0].score
+    $scoreThreshold = $topScore - $ScoreWindow
+    $top = @($sorted | Where-Object { [int]$_.score -ge $scoreThreshold } | Select-Object -First $MaxRecommendations)
+    if ($top.Count -lt $MinRecommendations) {
+      $top = @($sorted | Select-Object -First ([Math]::Min($MinRecommendations, $sorted.Count)))
+    }
+  }
+}
 
 [pscustomobject]@{
   query = $Query
@@ -187,5 +300,13 @@ $top = @($scored | Sort-Object @{ Expression = "score"; Descending = $true }, @{
   source_file = $routePath
   merged_variants = (-not $KeepVariants)
   returned = $top.Count
+  recommendation_policy = [pscustomobject]@{
+    mode = $selectionMode
+    explicit_limit = $(if ($Limit -gt 0) { $Limit } else { $null })
+    min_recommendations = $MinRecommendations
+    max_recommendations = $MaxRecommendations
+    score_window = $ScoreWindow
+    score_threshold = $scoreThreshold
+  }
   candidates = $top
 } | ConvertTo-Json -Depth 12

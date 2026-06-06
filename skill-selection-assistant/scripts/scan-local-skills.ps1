@@ -274,6 +274,14 @@ function Get-RoutePriority {
     $score += 3
   }
 
+  $routeText = (($Entry.name, $Entry.relative_path, $Entry.short_description) -join " ").ToLowerInvariant()
+  if ($routeText -match "project|workspace|repo|repository|local") {
+    $score += 50
+  }
+  if ($Entry.relative_path -notmatch "^(gh\d+|er\d+|baoyu-|composio-|awesome-|anthropic)") {
+    $score += 20
+  }
+
   return $score
 }
 
@@ -299,7 +307,7 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$OutputSchemaVersion = "1.5.9"
+$OutputSchemaVersion = "1.5.10"
 $ParserSchemaVersion = "1.0"
 $manifestPath = Join-Path $OutputDir "manifest.json"
 $parseCachePath = Join-Path $OutputDir "parsed-skills-cache.ndjson"
@@ -348,7 +356,10 @@ $topLevelSkillFiles = Get-ChildItem -LiteralPath $skillsRootResolved -Directory 
     Get-Item -LiteralPath $skillPath
   }
 }
-$skillFiles = @($recursiveSkillFiles + $topLevelSkillFiles) | Sort-Object FullName -Unique
+$selfSkillPath = (Resolve-Path -LiteralPath (Join-Path $skillDir "SKILL.md")).Path
+$skillFiles = @(@($recursiveSkillFiles) + @($topLevelSkillFiles)) |
+  Where-Object { (Resolve-Path -LiteralPath $_.FullName).Path -ne $selfSkillPath } |
+  Sort-Object FullName -Unique
 $rawItems = @()
 
 foreach ($file in $skillFiles) {

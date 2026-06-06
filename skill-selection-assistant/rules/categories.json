@@ -9,7 +9,7 @@
     "spreadsheet-data": "excel|xlsx|spreadsheet|csv|table|stata|spss|sas",
     "data-analysis": "data|analysis|analytics|visualization|dashboard|chart|benchmark|metrics|statistics|forecast",
     "ai-ml": "\\bai\\b|ml|machine learning|llm|model|prompt|agent|rag|embedding|neural|classifier",
-    "coding-general": "code|coding|developer|software|programming|program|script|refactor|architecture|typescript|javascript|python|java|golang|rust",
+    "coding-general": "code|coding|developer|software|programming|program|script|refactor|architecture|typescript|javascript|python|java|golang|rust|project|workspace|repo|repository|readme|bot|plugin",
     "frontend-web": "frontend|front-end|react|vue|html|css|web|browser|ui|ux|tailwind|website|component|web page",
     "backend-api": "api|backend|server|database|sql|webhook|sdk|mcp|graphql|rest",
     "testing-debugging": "test|debug|ci|qa|tdd|unit|integration|bug|fix|diagnose",
@@ -83,13 +83,13 @@
     "automation-integration": ["\u81ea\u52a8\u5316", "\u6d41\u7a0b", "\u96c6\u6210", "\u8fde\u63a5\u5668"],
     "business-product": ["\u4ea7\u54c1", "\u9700\u6c42", "\u5546\u4e1a", "\u5e02\u573a", "\u9500\u552e"],
     "media-video-audio": ["\u89c6\u9891", "\u97f3\u9891", "\u5b57\u5e55", "\u8f6c\u5f55"],
-    "coding-general": ["\u4ee3\u7801", "\u7f16\u7a0b", "\u811a\u672c", "\u5f00\u53d1"]
+    "coding-general": ["\u4ee3\u7801", "\u7f16\u7a0b", "\u811a\u672c", "\u5f00\u53d1", "\u9879\u76ee", "\u7ed3\u6784", "\u673a\u5668\u4eba", "\u63d2\u4ef6", "README"]
   },
   "query_cn_task_words": {
     "generate": ["\u751f\u6210", "\u521b\u5efa", "\u642d\u5efa", "\u5236\u4f5c"],
     "review": ["\u8bc4\u5ba1", "\u5ba1\u67e5", "\u68c0\u67e5", "\u770b\u770b"],
     "test-debug": ["\u6d4b\u8bd5", "\u8c03\u8bd5", "\u4fee\u590d", "\u62a5\u9519"],
-    "plan": ["\u65b9\u6848", "\u8ba1\u5212", "\u89c4\u5212", "\u8bbe\u8ba1"],
+    "plan": ["\u65b9\u6848", "\u8ba1\u5212", "\u89c4\u5212", "\u8bbe\u8ba1", "\u6574\u7406", "\u7ed3\u6784"],
     "transform": ["\u8f6c\u6362", "\u683c\u5f0f\u5316", "\u6539\u5199", "\u91cd\u6784"],
     "analyze": ["\u5206\u6790", "\u8bca\u65ad", "\u7814\u7a76"],
     "publish": ["\u53d1\u5e03", "\u63a8\u9001", "\u4e0a\u7ebf"],

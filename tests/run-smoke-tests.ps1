@@ -21,6 +21,9 @@ $skillRoot = Join-Path $repoRoot "tests\fixtures\skills"
 $scanScript = Join-Path $repoRoot "skill-selection-assistant\scripts\scan-local-skills.ps1"
 $inferScript = Join-Path $repoRoot "skill-selection-assistant\scripts\infer-route.ps1"
 $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.ps1"
+$memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
+$doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
+$installScript = Join-Path $repoRoot "scripts\install-skill.ps1"
 $cleanScript = Join-Path $repoRoot "scripts\clean-local-artifacts.ps1"
 $packageScript = Join-Path $repoRoot "scripts\package-release.ps1"
 $rulesPath = Join-Path $repoRoot "skill-selection-assistant\rules\categories.json"
@@ -45,8 +48,8 @@ try {
   $index = Read-Json -Path $indexPath
   $manifest = Read-Json -Path $manifestPath
   $summary = Read-Json -Path $summaryPath
-  Assert-True ([int]$index.raw_total -eq 7) "raw_total should be 7"
-  Assert-True ([int]$index.total -eq 6) "total should preserve same-name variants and merge exact duplicates"
+  Assert-True ([int]$index.raw_total -eq 11) "raw_total should be 11"
+  Assert-True ([int]$index.total -eq 10) "total should preserve same-name variants and merge exact duplicates"
   Assert-True ([int]$index.duplicates_removed -eq 1) "duplicates_removed should be 1"
   Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
   Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
@@ -89,6 +92,60 @@ try {
   Assert-True ([int]$recommendation.selection.returned -gt 0) "recommendation should return candidates"
   Assert-True ($recommendation.selection.candidates[0].name -eq "frontend-design") "frontend-design should be first for frontend UI query"
   Assert-True ($recommendation.selection.merged_variants -eq $true) "recommendation should merge same-name variants by default"
+  Assert-True (-not ($recommendation.selection.candidates[0].PSObject.Properties.Name -contains "variants")) "single-variant recommendations should omit variant details"
+
+  $projectIndexDir = Join-Path $outputRoot "project-index"
+  & $scanScript -SkillsRoot $skillRoot -OutputDir $projectIndexDir | Out-Null
+  $projectRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -Limit 3 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($projectRecommendation.route.category -eq "coding-general") "project-structure query should infer coding-general"
+  Assert-True (@("project-helper", "readme-maintainer", "repo-cleanup-helper") -contains $projectRecommendation.selection.candidates[0].name) "project workspace skills should outrank generic coding skills"
+
+  $dynamicRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($dynamicRecommendation.selection.recommendation_policy.mode -eq "dynamic_score_window") "omitting -Limit should use dynamic score-window recommendations"
+  Assert-True ([int]$dynamicRecommendation.selection.returned -gt 3) "dynamic recommendations should be able to return more than 3 candidates"
+  Assert-True ([int]$dynamicRecommendation.selection.returned -le 6) "dynamic recommendations should respect MaxRecommendations"
+
+  $autoIndexDir = Join-Path $outputRoot "auto-index"
+  $autoRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $autoIndexDir -SkillsRoot $skillRoot | Out-String | ConvertFrom-Json)
+  Assert-True (Test-Path -LiteralPath (Join-Path $autoIndexDir "route-summary.json")) "recommend-skills.ps1 should auto-scan when index is missing"
+  Assert-True ($autoRecommendation.route.category -eq "frontend-web") "auto-scan recommendation should infer frontend-web"
+
+  Assert-True (Test-Path -LiteralPath $memoryScript) "record-selection-memory.ps1 should exist"
+  $memoryResult = (& $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType "domain_detail" -Category "frontend-web" -IndexDir $indexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($memoryResult.status -eq "recorded") "memory recorder should report recorded"
+  Assert-True (Test-Path -LiteralPath $memoryResult.memory) "selection memory should exist"
+  $memoryText = Get-Content -LiteralPath $memoryResult.memory -Raw -Encoding UTF8
+  Assert-True ($memoryText.Contains("frontend-design")) "selection memory should include selected skill"
+
+  $memoryRankIndexDir = Join-Path $outputRoot "memory-rank-index"
+  & $scanScript -SkillsRoot $skillRoot -OutputDir $memoryRankIndexDir | Out-Null
+  & $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "webapp-testing" -RouteType "domain_detail" -Category "frontend-web" -IndexDir $memoryRankIndexDir | Out-Null
+  $memoryRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $memoryRankIndexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($memoryRecommendation.selection.candidates[0].name -eq "webapp-testing") "selection memory should influence future ranking"
+  Assert-True ($memoryRecommendation.selection.candidates[0].memory_score -gt 0) "memory-boosted candidate should expose memory_score"
+
+  Assert-True (Test-Path -LiteralPath $doctorScript) "doctor.ps1 should exist"
+  $doctorIndexDir = Join-Path $outputRoot "doctor-index"
+  $doctorResult = (& $doctorScript -SkillsRoot $skillRoot -IndexDir $doctorIndexDir -Fix | Out-String | ConvertFrom-Json)
+  Assert-True ($doctorResult.status -eq "ok") "doctor.ps1 -Fix should report ok"
+  Assert-True (Test-Path -LiteralPath (Join-Path $doctorIndexDir "route-summary.json")) "doctor.ps1 -Fix should generate route summary"
+  Assert-True (-not [string]::IsNullOrWhiteSpace([string]$doctorResult.sample.first_candidate)) "doctor.ps1 should run a sample recommendation"
+
+  Assert-True (Test-Path -LiteralPath $installScript) "install-skill.ps1 should exist"
+  $installDest = Join-Path $outputRoot "installed\skills\skill-selection-assistant"
+  $installResult = (& $installScript -Destination $installDest -SkillsRoot $skillRoot -Force | Out-String | ConvertFrom-Json)
+  Assert-True ($installResult.status -eq "installed") "install-skill.ps1 should report installed"
+  Assert-True (Test-Path -LiteralPath (Join-Path $installDest "SKILL.md")) "installer should copy SKILL.md"
+  Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\route-summary.json")) "installer should run first scan"
+
+  $selfOnlyRoot = Join-Path $outputRoot "self-only\skills"
+  $selfOnlyDest = Join-Path $selfOnlyRoot "skill-selection-assistant"
+  $selfOnlyInstall = (& $installScript -Destination $selfOnlyDest -SkillsRoot $selfOnlyRoot -Force | Out-String | ConvertFrom-Json)
+  Assert-True ($selfOnlyInstall.status -eq "installed") "installer should support a self-only skills root"
+  $selfOnlySummary = Read-Json -Path (Join-Path $selfOnlyDest ".skill-index\route-summary.json")
+  Assert-True ([int]$selfOnlySummary.raw_total -eq 0) "scanner should exclude the router skill itself from candidates"
+  $selfOnlyRecommendation = (& (Join-Path $selfOnlyDest "scripts\recommend-skills.ps1") -Query "analyze data" -Limit 3 -IndexDir (Join-Path $selfOnlyDest ".skill-index") -SkillsRoot $selfOnlyRoot | Out-String | ConvertFrom-Json)
+  Assert-True ([int]$selfOnlyRecommendation.selection.returned -eq 0) "self-only skills root should return no recommendations instead of recommending itself"
 
   Assert-True (Test-Path -LiteralPath $cleanScript) "clean-local-artifacts.ps1 should exist"
   $cleanPreview = (& $cleanScript -WhatIf | Out-String | ConvertFrom-Json)
@@ -103,6 +160,12 @@ try {
   try {
     $artifactEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-index*" -or $_.FullName -like "dist/*" })
     Assert-True ($artifactEntries.Count -eq 0) "package zip should exclude local artifacts"
+    $zhReadmeEntries = @($archive.Entries | Where-Object { $_.FullName -eq "README.zh-CN.md" })
+    Assert-True ($zhReadmeEntries.Count -eq 1) "package zip should include README.zh-CN.md"
+    $installEntries = @($archive.Entries | Where-Object { $_.FullName -like "*scripts*install-skill.ps1" })
+    Assert-True ($installEntries.Count -eq 1) "package zip should include install-skill.ps1"
+    $doctorEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*doctor.ps1" })
+    Assert-True ($doctorEntries.Count -eq 1) "package zip should include doctor.ps1"
   }
   finally {
     $archive.Dispose()
