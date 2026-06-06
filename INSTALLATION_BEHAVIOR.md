@@ -57,6 +57,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 
 The Python installer is the preferred cross-platform entry point. It copies the router skill on any platform with Python available. If PowerShell/pwsh is available, it can also run the first scan; otherwise, users can install first and scan later.
 
+After a successful scan, installers should try to run `skill-selection-assistant/scripts/summarize-index.py` to generate `DETAILED_CLASSIFICATION.md`, `detailed-classification.json`, and `domain-task-matrix.csv`. If Python is unavailable in the PowerShell installer path, summary generation may be skipped without blocking installation.
+
 It also includes a first-use / install-time scanner:
 
 ```powershell
@@ -89,6 +91,8 @@ Users can also diagnose and repair a first install with:
 ```powershell
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
 ```
+
+With `-Fix`, doctor rebuilds a missing route summary and also attempts to regenerate the detailed classification summary when possible.
 
 ## Self-Growing Direction
 

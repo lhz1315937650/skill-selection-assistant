@@ -54,6 +54,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 
 它会把 `skill-selection-assistant/` 安装到你的 Codex skills 目录，并自动执行第一次本地扫描。已有安装时，可以加 `-Force` 更新路由器 skill，同时保留本地运行时索引。
 
+首次扫描后，安装器会尽量生成 `.skill-index/DETAILED_CLASSIFICATION.md`、`.skill-index/detailed-classification.json` 和 `.skill-index/domain-task-matrix.csv`，方便用户直接查看本机 skill 的详细分类分布。
+
 如果使用 Python 安装器，更新时使用 `--force`；如果当前环境还没有 PowerShell/pwsh，可以先用 `--skip-scan` 只完成复制安装：
 
 ```bash
@@ -113,6 +115,8 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recom
 - `shortlists/`：每个分类下的候选技能列表。
 - `parsed-skills-cache.ndjson`：解析缓存，用于减少重复读取成本。
 - `selection-memory.md`：选择反馈与自增长记忆。
+- `DETAILED_CLASSIFICATION.md`：人类可读的本机 skill 详细分类地图。
+- `domain-task-matrix.csv`：二级领域和任务类型的交叉表，适合后续分析和调参。
 
 默认情况下，本项目不会生成完整大路由文件。只有在明确需要调试或审计时，才建议使用 `-IncludeFullRoutes`。
 

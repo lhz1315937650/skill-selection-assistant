@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -78,6 +79,34 @@ def run_scan(destination: Path, skills_root: str) -> dict:
     return parsed
 
 
+def run_summary(destination: Path, index_dir: str) -> dict:
+    summary_script = destination / "scripts" / "summarize-index.py"
+    if not summary_script.exists():
+        return {"summary_ran": False, "summary_skipped_reason": f"Summary script not found: {summary_script}"}
+    if not index_dir:
+        return {"summary_ran": False, "summary_skipped_reason": "Index directory is unknown."}
+
+    result = subprocess.run(
+        [sys.executable, str(summary_script), "--index-dir", index_dir],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {
+            "summary_ran": False,
+            "summary_skipped_reason": "Summary script exited with a non-zero status.",
+            "summary_stdout": result.stdout.strip(),
+            "summary_stderr": result.stderr.strip(),
+        }
+    try:
+        parsed = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        parsed = {"summary_stdout": result.stdout.strip()}
+    parsed["summary_ran"] = True
+    return parsed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install skill-selection-assistant into a local Codex skills directory.")
     parser.add_argument("--codex-home", default="", help="Codex home directory. Defaults to CODEX_HOME or ~/.codex.")
@@ -101,13 +130,18 @@ def main() -> int:
     scan_result: dict = {"scan_ran": False, "scan_skipped_reason": "skip-scan was requested."}
     if not args.skip_scan:
         scan_result = run_scan(destination=destination, skills_root=args.skills_root)
+    index_dir = str(scan_result.get("OutputDir", destination / ".skill-index"))
+    summary_result: dict = {"summary_ran": False, "summary_skipped_reason": "scan was skipped or did not complete."}
+    if scan_result.get("scan_ran"):
+        summary_result = run_summary(destination=destination, index_dir=index_dir)
 
     output = {
         "status": "installed",
         "destination": str(destination.resolve()),
         "skills_root": scan_result.get("SkillsRoot", args.skills_root),
-        "index_dir": scan_result.get("OutputDir", str(destination / ".skill-index")),
+        "index_dir": index_dir,
         **scan_result,
+        **summary_result,
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0

@@ -47,6 +47,7 @@ foreach ($item in @("SKILL.md", "agents", "rules", "scripts")) {
 }
 
 $scanResult = $null
+$summaryResult = $null
 if (-not $SkipScan) {
   $scanScript = Join-Path $Destination "scripts\scan-local-skills.ps1"
   if (-not (Test-Path -LiteralPath $scanScript)) {
@@ -59,12 +60,29 @@ if (-not $SkipScan) {
   else {
     $scanResult = & $scanScript
   }
+
+  $summaryScript = Join-Path $Destination "scripts\summarize-index.py"
+  $python = Get-Command python -ErrorAction SilentlyContinue
+  if ((Test-Path -LiteralPath $summaryScript) -and $python) {
+    $indexDir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
+    try {
+      $summaryResult = & $python.Source $summaryScript --index-dir $indexDir | Out-String | ConvertFrom-Json
+    }
+    catch {
+      $summaryResult = [pscustomobject]@{
+        summary_ran = $false
+        summary_skipped_reason = $_.Exception.Message
+      }
+    }
+  }
 }
 
 [pscustomobject]@{
   status = "installed"
   destination = (Resolve-Path -LiteralPath $Destination).Path
   scan_ran = (-not $SkipScan)
+  summary_ran = $(if ($summaryResult) { $summaryResult.summary_ran } else { $false })
+  summary = $summaryResult
   skills_root = $(if ($scanResult) { $scanResult.SkillsRoot } else { $SkillsRoot })
   index_dir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
 } | ConvertTo-Json -Depth 6

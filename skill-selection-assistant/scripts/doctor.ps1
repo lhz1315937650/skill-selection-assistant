@@ -46,9 +46,11 @@ if (-not $IndexDir) {
 $scanScript = Join-Path $PSScriptRoot "scan-local-skills.ps1"
 $recommendScript = Join-Path $PSScriptRoot "recommend-skills.ps1"
 $memoryScript = Join-Path $PSScriptRoot "record-selection-memory.ps1"
+$summaryScript = Join-Path $PSScriptRoot "summarize-index.py"
 $rulesPath = Join-Path $skillDir "rules\categories.json"
 $summaryPath = Join-Path $IndexDir "route-summary.json"
 $memoryPath = Join-Path $IndexDir "selection-memory.md"
+$classificationMapPath = Join-Path $IndexDir "DETAILED_CLASSIFICATION.md"
 $skillsRootResolved = Resolve-SkillsRoot -ExplicitRoot $SkillsRoot
 
 $checks = New-Object System.Collections.Generic.List[object]
@@ -57,6 +59,7 @@ $checks.Add([pscustomobject]@{ name = "skills_root"; ok = (-not [string]::IsNull
 $checks.Add([pscustomobject]@{ name = "scanner"; ok = (Test-Path -LiteralPath $scanScript); detail = $scanScript })
 $checks.Add([pscustomobject]@{ name = "recommender"; ok = (Test-Path -LiteralPath $recommendScript); detail = $recommendScript })
 $checks.Add([pscustomobject]@{ name = "memory_recorder"; ok = (Test-Path -LiteralPath $memoryScript); detail = $memoryScript })
+$checks.Add([pscustomobject]@{ name = "index_summarizer"; ok = (Test-Path -LiteralPath $summaryScript); detail = $summaryScript })
 $checks.Add([pscustomobject]@{ name = "rules"; ok = (Test-JsonFile -Path $rulesPath); detail = $rulesPath })
 
 $fixes = @()
@@ -71,6 +74,15 @@ if ((-not (Test-Path -LiteralPath $summaryPath)) -and $Fix) {
 $summaryOk = Test-JsonFile -Path $summaryPath
 $checks.Add([pscustomobject]@{ name = "route_summary"; ok = $summaryOk; detail = $summaryPath })
 $checks.Add([pscustomobject]@{ name = "selection_memory"; ok = (Test-Path -LiteralPath $memoryPath); detail = $memoryPath })
+
+if ($summaryOk -and (-not (Test-Path -LiteralPath $classificationMapPath)) -and $Fix -and (Test-Path -LiteralPath $summaryScript)) {
+  $python = Get-Command python -ErrorAction SilentlyContinue
+  if ($python) {
+    & $python.Source $summaryScript --index-dir $IndexDir | Out-Null
+    $fixes += "generated-classification-summary"
+  }
+}
+$checks.Add([pscustomobject]@{ name = "classification_summary"; ok = (Test-Path -LiteralPath $classificationMapPath); detail = $classificationMapPath })
 
 $shortlistCount = 0
 $summary = $null

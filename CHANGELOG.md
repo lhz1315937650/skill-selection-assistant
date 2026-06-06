@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.12 - 2026-06-06
+
+- expanded portable detailed-domain routing from broad buckets into more specific categories such as `project-maintenance`, `skill-management`, `knowledge-management`, `research-citation`, `data-visualization`, `browser-automation`, and `agent-workflow`
+- improved Chinese request matching by expanding common Chinese intent words into portable English relevance hints before candidate scoring
+- added `skill-selection-assistant/scripts/summarize-index.py` to generate `DETAILED_CLASSIFICATION.md`, `detailed-classification.json`, and `domain-task-matrix.csv`
+- updated installers and `doctor.ps1 -Fix` to generate or repair the detailed classification summary when possible
+- extended smoke tests to cover the new rules schema, project-maintenance routing, summarizer packaging, and generated classification maps
+
 ## v1.5.11 - 2026-06-06
 
 - added `scripts/install-skill.py` as a cross-platform installer for users who are not on Windows PowerShell-first setups

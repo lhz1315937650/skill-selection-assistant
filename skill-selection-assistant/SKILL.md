@@ -227,7 +227,8 @@ The scanner should:
 8. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
 9. Write category-specific route files under `.skill-index/routes/` only when `-IncludeFullRoutes` is used for audits.
 10. Write category-specific shortlist files under `.skill-index/shortlists/`.
-11. Write or preserve `.skill-index/selection-memory.md`.
+11. Generate `.skill-index/DETAILED_CLASSIFICATION.md`, `.skill-index/detailed-classification.json`, and `.skill-index/domain-task-matrix.csv` when `scripts/summarize-index.py` is available.
+12. Write or preserve `.skill-index/selection-memory.md`.
 
 The scanner output should keep `SkillInstanceDir` and `SkillsRoot` separate so users can see which router skill instance produced the index and which local skill library was scanned.
 
@@ -273,7 +274,7 @@ Classify each local skill using:
 - `origin`: `user-local`, `official-system`, `installed-topic`, `linked-external`, or `unknown`
 - `primary_domain`: best single broad area for fast selection
 - `domain`: broad areas such as `writing`, `research`, `coding`, `data`, `design`, `documents`, `publishing`, `safety`, or `general`
-- `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
+- `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `project-maintenance`, `skill-management`, `knowledge-management`, `research-citation`, `data-visualization`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
 - `task_type`: practical action such as `summarize`, `review`, `generate`, `transform`, `test-debug`, `extract`, `publish`, `plan`, or `analyze`
 - `output_type`: likely output such as `markdown`, `image`, `pptx`, `docx`, `xlsx`, `html`, `code`, `report`, or `workflow`
 - `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
