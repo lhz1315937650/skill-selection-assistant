@@ -20,6 +20,7 @@ New-Item -ItemType Directory -Force -Path $temp | Out-Null
 try {
   $topLevelItems = @(
     "README.md",
+    "README.zh-CN.md",
     "LICENSE",
     "CHANGELOG.md",
     "INSTALLATION_BEHAVIOR.md",
