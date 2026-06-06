@@ -23,6 +23,7 @@ $inferScript = Join-Path $repoRoot "skill-selection-assistant\scripts\infer-rout
 $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.ps1"
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
+$summarizeScript = Join-Path $repoRoot "skill-selection-assistant\scripts\summarize-index.py"
 $installScript = Join-Path $repoRoot "scripts\install-skill.ps1"
 $pythonInstallScript = Join-Path $repoRoot "scripts\install-skill.py"
 $cleanScript = Join-Path $repoRoot "scripts\clean-local-artifacts.ps1"
@@ -55,7 +56,7 @@ try {
   Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
   Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
   Assert-True ($manifest.cache_file -eq "parsed-skills-cache.ndjson") "manifest should point to NDJSON parse cache"
-  Assert-True ($summary.rules_schema_version -eq "1.0") "route summary should expose shared rules schema"
+  Assert-True ($summary.rules_schema_version -eq "1.1") "route summary should expose shared rules schema"
   Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
 
   $duplicateVariants = @($index.skills | Where-Object { $_.canonical_name -eq "duplicate-tool" })
@@ -98,7 +99,7 @@ try {
   $projectIndexDir = Join-Path $outputRoot "project-index"
   & $scanScript -SkillsRoot $skillRoot -OutputDir $projectIndexDir | Out-Null
   $projectRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -Limit 3 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
-  Assert-True ($projectRecommendation.route.category -eq "coding-general") "project-structure query should infer coding-general"
+  Assert-True ($projectRecommendation.route.category -eq "project-maintenance") "project-structure query should infer project-maintenance"
   Assert-True (@("project-helper", "readme-maintainer", "repo-cleanup-helper") -contains $projectRecommendation.selection.candidates[0].name) "project workspace skills should outrank generic coding skills"
 
   $dynamicRecommendation = (& $recommendScript -Query "organize this bot repo project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
@@ -126,10 +127,12 @@ try {
   Assert-True ($memoryRecommendation.selection.candidates[0].memory_score -gt 0) "memory-boosted candidate should expose memory_score"
 
   Assert-True (Test-Path -LiteralPath $doctorScript) "doctor.ps1 should exist"
+  Assert-True (Test-Path -LiteralPath $summarizeScript) "summarize-index.py should exist"
   $doctorIndexDir = Join-Path $outputRoot "doctor-index"
   $doctorResult = (& $doctorScript -SkillsRoot $skillRoot -IndexDir $doctorIndexDir -Fix | Out-String | ConvertFrom-Json)
   Assert-True ($doctorResult.status -eq "ok") "doctor.ps1 -Fix should report ok"
   Assert-True (Test-Path -LiteralPath (Join-Path $doctorIndexDir "route-summary.json")) "doctor.ps1 -Fix should generate route summary"
+  Assert-True (Test-Path -LiteralPath (Join-Path $doctorIndexDir "DETAILED_CLASSIFICATION.md")) "doctor.ps1 -Fix should generate classification summary"
   Assert-True (-not [string]::IsNullOrWhiteSpace([string]$doctorResult.sample.first_candidate)) "doctor.ps1 should run a sample recommendation"
 
   Assert-True (Test-Path -LiteralPath $installScript) "install-skill.ps1 should exist"
@@ -138,6 +141,7 @@ try {
   Assert-True ($installResult.status -eq "installed") "install-skill.ps1 should report installed"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest "SKILL.md")) "installer should copy SKILL.md"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\route-summary.json")) "installer should run first scan"
+  Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\DETAILED_CLASSIFICATION.md")) "installer should generate classification summary"
 
   Assert-True (Test-Path -LiteralPath $pythonInstallScript) "install-skill.py should exist"
   $pythonInstallDest = Join-Path $outputRoot "python-installed\skills\skill-selection-assistant"
@@ -175,6 +179,8 @@ try {
     Assert-True ($pythonInstallEntries.Count -eq 1) "package zip should include install-skill.py"
     $doctorEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*doctor.ps1" })
     Assert-True ($doctorEntries.Count -eq 1) "package zip should include doctor.ps1"
+    $summarizeEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*summarize-index.py" })
+    Assert-True ($summarizeEntries.Count -eq 1) "package zip should include summarize-index.py"
   }
   finally {
     $archive.Dispose()

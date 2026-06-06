@@ -151,6 +151,17 @@ function Test-ContainsUWord {
   return $Text.Contains((New-UWord -Codes $Codes))
 }
 
+function Add-TokenIfContainsUWord {
+  param([System.Collections.ArrayList]$Tokens, [string]$Text, [int[]]$Codes, [string[]]$Add)
+  if (Test-ContainsUWord -Text $Text -Codes $Codes) {
+    foreach ($token in $Add) {
+      if (-not [string]::IsNullOrWhiteSpace($token)) {
+        [void]$Tokens.Add($token)
+      }
+    }
+  }
+}
+
 if (-not $IndexDir) {
   $skillDir = Split-Path -Parent $PSScriptRoot
   $IndexDir = Join-Path $skillDir ".skill-index"
@@ -183,6 +194,27 @@ $usefulQueryTokens = Get-UsefulQueryTokens -Tokens $queryTokens
 $categoryTokens = Get-TokenList -Text $Category
 $memoryScores = Import-SelectionMemoryScores -Path (Join-Path $IndexDir "selection-memory.md") -Category $Category
 $queryLower = $Query.ToLowerInvariant()
+$expandedQueryTokens = [System.Collections.ArrayList]::new()
+foreach ($token in $usefulQueryTokens) { [void]$expandedQueryTokens.Add($token) }
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x524D,0x7AEF) -Add @("frontend", "ui", "web", "page")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x9875,0x9762) -Add @("page", "web", "frontend", "ui")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x9879,0x76EE) -Add @("project", "workspace", "repo", "repository", "local")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x672C,0x5730) -Add @("local", "workspace", "project")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x7ED3,0x6784) -Add @("structure", "architecture", "organize", "project")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x673A,0x5668,0x4EBA) -Add @("bot", "agent", "automation")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x5B66,0x672F) -Add @("academic", "research", "paper")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x8BBA,0x6587) -Add @("paper", "academic", "research", "literature")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x5F15,0x7528) -Add @("citation", "reference", "bibliography")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x77E5,0x8BC6,0x5E93) -Add @("knowledge", "notes", "obsidian", "wiki", "vault")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x7B14,0x8BB0) -Add @("notes", "knowledge", "wiki")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6570,0x636E) -Add @("data", "analysis", "analytics", "spreadsheet")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x8868) -Add @("chart", "visualization", "dataviz", "plot")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x4EE3,0x7801) -Add @("code", "coding", "programming")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6D4B,0x8BD5) -Add @("test", "testing", "debug")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x68C0,0x67E5) -Add @("review", "audit", "check", "debug")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x7247) -Add @("image", "visual", "design")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x50CF) -Add @("image", "visual", "design")
+$usefulQueryTokens = @($expandedQueryTokens | Sort-Object -Unique)
 $wantsVisual = (
   $queryLower.Contains("ui") -or
   $queryLower.Contains("design") -or
