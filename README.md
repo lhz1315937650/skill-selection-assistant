@@ -26,7 +26,8 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 
 - inspects the user's local skill library before continuing with a normal request
 - optionally scans the local skills root on install or first use
-- classifies skills by origin, broad domain, detailed domain, task type, output type, setup level, and status
+- classifies skills by origin, broad domain, detailed domain, specialty, adaptive leaf route, task type, output type, setup level, and status
+- prefers the smallest reliable route instead of a fixed-depth category tree, using adaptive leaves such as `specialty=frontend-style-ui|task=generate` when they reduce the candidate pool
 - generates a local classification map so users can inspect their own skill distribution without reading the full index
 - recommends a weighted shortlist instead of a hardcoded number of skills
 - explains each match briefly in the same language the user used
@@ -36,6 +37,20 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 - asks for confirmation before downloading or installing dependencies required by a selected skill
 - asks follow-up setup questions when the selected skill still needs user-specific prerequisite configuration
 - records recurring match patterns, missed matches, and skill gaps so the local skill library can become self-growing
+
+## Adaptive Routing
+
+The routing hierarchy is intentionally adaptive, not fixed.
+
+The scanner first builds broad and detailed routes such as `primary_domain`, `domain_detail`, and `specialty`. If a route is still large, it also creates adaptive leaf routes from the installing user's real skill distribution, for example:
+
+```text
+specialty=document-pdf-ocr|task=extract
+specialty=devops-ci-release|task=publish
+specialty=frontend-style-ui|task=generate
+```
+
+At recommendation time, the assistant chooses the smallest reliable matching route and reads only that route's shortlist. This reduces token use and avoids scanning a large local skill library for every request.
 
 ## Important Portability Rule
 

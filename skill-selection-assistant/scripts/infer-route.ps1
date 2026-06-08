@@ -64,9 +64,11 @@ if (-not $IndexDir) {
 
 $ruleConfig = Import-RuleConfig -SkillDir $skillDir
 $detailRules = ConvertTo-OrderedHashtable -Object $ruleConfig.domain_detail_rules
+$specialtyRules = ConvertTo-OrderedHashtable -Object $ruleConfig.specialty_rules
 $taskRules = ConvertTo-OrderedHashtable -Object $ruleConfig.task_rules
 $primaryMap = ConvertTo-OrderedHashtable -Object $ruleConfig.primary_map
 $cnDetailWords = ConvertTo-OrderedHashtable -Object $ruleConfig.query_cn_detail_words
+$cnSpecialtyWords = ConvertTo-OrderedHashtable -Object $ruleConfig.query_cn_specialty_words
 $cnTaskWords = ConvertTo-OrderedHashtable -Object $ruleConfig.query_cn_task_words
 
 $summaryPath = Join-Path $IndexDir "route-summary.json"
@@ -90,6 +92,18 @@ foreach ($key in $detailRules.Keys) {
   }
 }
 
+$specialtyScores = @{}
+foreach ($key in $specialtyRules.Keys) {
+  if (Match-Rule -Text $text -Pattern $specialtyRules[$key]) {
+    Add-Score -Scores $specialtyScores -Key $key -Amount 28
+  }
+  foreach ($token in $tokens) {
+    if ($key.Contains($token)) {
+      Add-Score -Scores $specialtyScores -Key $key -Amount 10
+    }
+  }
+}
+
 $taskScores = @{}
 foreach ($key in $taskRules.Keys) {
   if (Match-Rule -Text $text -Pattern $taskRules[$key]) {
@@ -101,17 +115,27 @@ foreach ($key in $cnDetailWords.Keys) {
   Add-CnScore -Scores $detailScores -Key $key -Amount 24 -Words @($cnDetailWords[$key])
 }
 
+foreach ($key in $cnSpecialtyWords.Keys) {
+  Add-CnScore -Scores $specialtyScores -Key $key -Amount 32 -Words @($cnSpecialtyWords[$key])
+}
+
 foreach ($key in $cnTaskWords.Keys) {
   Add-CnScore -Scores $taskScores -Key $key -Amount 16 -Words @($cnTaskWords[$key])
 }
 
+$bestSpecialty = $specialtyScores.GetEnumerator() | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 1
 $bestDetail = $detailScores.GetEnumerator() | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 1
 $bestTask = $taskScores.GetEnumerator() | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 1
 
 $routeType = "primary_domain"
 $category = "general"
 $confidence = 0
-if ($bestDetail) {
+if ($bestSpecialty) {
+  $routeType = "specialty"
+  $category = $bestSpecialty.Key
+  $confidence = [Math]::Min(100, [int]$bestSpecialty.Value * 3)
+}
+elseif ($bestDetail) {
   $routeType = "domain_detail"
   $category = $bestDetail.Key
   $confidence = [Math]::Min(100, [int]$bestDetail.Value * 4)
@@ -123,7 +147,10 @@ elseif ($bestTask) {
 }
 
 $primaryDomain = "general"
-if ($primaryMap.ContainsKey($category)) {
+if (($routeType -eq "specialty") -and $bestDetail -and $primaryMap.ContainsKey($bestDetail.Key)) {
+  $primaryDomain = $primaryMap[$bestDetail.Key]
+}
+elseif ($primaryMap.ContainsKey($category)) {
   $primaryDomain = $primaryMap[$category]
 }
 elseif ($routeType -eq "primary_domain") {
@@ -134,6 +161,7 @@ $available = $false
 $summaryBucket = $null
 switch ($routeType) {
   "domain_detail" { $summaryBucket = $summary.domain_detail }
+  "specialty" { $summaryBucket = $summary.specialty }
   "task_type" { $summaryBucket = $summary.task_type }
   "primary_domain" { $summaryBucket = $summary.primary_domain }
 }
@@ -145,6 +173,7 @@ if ($routeInfo) { $available = $true }
   route_type = $routeType
   category = $category
   primary_domain = $primaryDomain
+  domain_detail = $(if ($bestDetail) { $bestDetail.Key } else { "" })
   confidence = $confidence
   available = $available
   route_count = $(if ($routeInfo) { $routeInfo.PSObject.Properties["count"].Value } else { 0 })

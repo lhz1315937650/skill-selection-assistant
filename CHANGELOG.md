@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.0 - 2026-06-08
+
+- added adaptive route leaves so large local skill buckets can be narrowed by `specialty + task_type` instead of relying on a fixed-depth category tree
+- added portable `specialty` classification rules and matching Chinese query hints without hardcoding any publisher-local skill contents
+- updated route inference and recommendation to prefer the smallest reliable route, falling back to broader routes only when needed
+- improved candidate ranking by adding relevance score into the final sort score so generic high-priority skills do not outrank better semantic matches
+- added `self-grow.py` to generate local self-growth reports, including oversized specialty and adaptive-leaf route suggestions
+- updated smoke tests to cover adaptive-leaf routing, specialty inference, relevance ranking, and route-local selection memory
+
 ## v1.5.12 - 2026-06-06
 
 - expanded portable detailed-domain routing from broad buckets into more specific categories such as `project-maintenance`, `skill-management`, `knowledge-management`, `research-citation`, `data-visualization`, `browser-automation`, and `agent-workflow`

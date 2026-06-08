@@ -21,6 +21,7 @@ The skill library should not stay as a static list of folders. It should continu
 - deduplicated recommendation views
 - weighted fine-grained domain detection
 - token-saving route-first selection
+- adaptive route leaves that narrow oversized buckets with additional axes such as task type
 - concise skill recommendations in the user's language
 - local selection memory
 - missed-match notes
@@ -45,11 +46,17 @@ skill-selection-assistant/.skill-index/
 |-- routes/                 # optional; only with -IncludeFullRoutes
 |   |-- primary-domain/
 |   |-- domain-detail/
+|   |-- specialty/
+|   |-- adaptive-leaf/
 |   `-- task-type/
 |-- shortlists/
 |   |-- primary-domain/
 |   |-- domain-detail/
+|   |-- specialty/
+|   |-- adaptive-leaf/
 |   `-- task-type/
+|-- self-growth-report.md
+|-- self-growth-report.json
 `-- selection-memory.md
 ```
 
@@ -70,6 +77,8 @@ The scanner keeps the real local skills untouched. Deduplication only changes th
 - `rules/categories.json` stores shared classification and query-inference rules used by both the scanner and route inference.
 - `primary_domain` is the best single broad domain for fast selection.
 - `domain_detail` records weighted fine-grained labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, and `testing-debugging`.
+- `specialty` records more concrete routes such as `document-pdf-ocr`, `devops-ci-release`, `frontend-style-ui`, and `skill-router-selection`.
+- `adaptive_leaf` routes are generated from the installing user's actual local skill distribution. They combine a concrete route with an additional axis, for example `specialty=document-pdf-ocr|task=extract`, only to reduce unnecessary candidate scanning.
 - Same-name skills with different content are preserved as separate variants instead of being forced into one representative candidate.
 - Recommendation output merges same-name variants by default for readability and emits variant details only when there is more than one variant.
 

@@ -1,6 +1,6 @@
 ---
 name: skill-selection-assistant
-description: Detect the most relevant local Codex skills for the current user request, introduce a weighted shortlist in the same language the user used, ask the user which skill to use, and confirm before any required environment download, installation, or user-specific prerequisite configuration.
+description: Detect the most relevant local Codex skills for the current user request, introduce a weighted shortlist in the same language the user used, maintain a self-growing skill index through selection memory and self-growth reports, ask the user which skill to use, and confirm before any required environment download, installation, or user-specific prerequisite configuration.
 metadata:
   short-description: Match local skills and ask the user to choose
 ---
@@ -227,8 +227,8 @@ The scanner should:
 8. Write `.skill-index/route-summary.json` and `.skill-index/route-summary.md`.
 9. Write category-specific route files under `.skill-index/routes/` only when `-IncludeFullRoutes` is used for audits.
 10. Write category-specific shortlist files under `.skill-index/shortlists/`.
-11. Generate `.skill-index/DETAILED_CLASSIFICATION.md`, `.skill-index/detailed-classification.json`, and `.skill-index/domain-task-matrix.csv` when `scripts/summarize-index.py` is available.
-12. Write or preserve `.skill-index/selection-memory.md`.
+11. Write or preserve `.skill-index/selection-memory.md`.
+12. Generate `.skill-index/self-growth-report.md` and `.skill-index/self-growth-report.json` when running the local self-growth audit.
 
 The scanner output should keep `SkillInstanceDir` and `SkillsRoot` separate so users can see which router skill instance produced the index and which local skill library was scanned.
 
@@ -251,7 +251,7 @@ Do not read every local skill before recommendation. Always use a route-first wo
 1. Prefer running `scripts/recommend-skills.ps1` with the user's request; it performs route inference and candidate selection in one compact step.
 2. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
 3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
-4. Choose the most relevant shortlist from `.skill-index/shortlists/primary-domain/`, `.skill-index/shortlists/domain-detail/`, or `.skill-index/shortlists/task-type/`.
+4. Choose the smallest reliable shortlist from `.skill-index/shortlists/`: start broad only when needed, prefer `specialty/`, and use `adaptive-leaf/` when the inferred specialty plus task type reduces the candidate pool.
 5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient; they are generated only when the scanner is run with `-IncludeFullRoutes`.
 6. Shortlist candidates according to selector scores and the returned `recommendation_policy`; default dynamic recommendations should also respect the relevance gate so weakly related candidates are not shown only because they scored well inside a broad route.
 7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
@@ -265,7 +265,7 @@ powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user r
 powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web
 ```
 
-If multiple categories are plausible, prefer the narrowest high-confidence `domain_detail` route. If the request is broad or ambiguous, use `primary_domain` first, then refine with `task_type`.
+If multiple categories are plausible, prefer the narrowest high-confidence route that still matches the request. The hierarchy is adaptive, not fixed: use `primary_domain` for broad building-level triage, `domain_detail` for department-level triage, `specialty` for concrete clinics, and `adaptive_leaf` routes such as `specialty=<name>|task=<task>` when they reduce token use.
 
 ## Multi-Level Classification
 
@@ -274,7 +274,7 @@ Classify each local skill using:
 - `origin`: `user-local`, `official-system`, `installed-topic`, `linked-external`, or `unknown`
 - `primary_domain`: best single broad area for fast selection
 - `domain`: broad areas such as `writing`, `research`, `coding`, `data`, `design`, `documents`, `publishing`, `safety`, or `general`
-- `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `project-maintenance`, `skill-management`, `knowledge-management`, `research-citation`, `data-visualization`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
+- `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
 - `task_type`: practical action such as `summarize`, `review`, `generate`, `transform`, `test-debug`, `extract`, `publish`, `plan`, or `analyze`
 - `output_type`: likely output such as `markdown`, `image`, `pptx`, `docx`, `xlsx`, `html`, `code`, `report`, or `workflow`
 - `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
@@ -343,6 +343,19 @@ Use the memory recorder after a user chooses, rejects, or reports a missed match
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/record-selection-memory.ps1 -Query "<user request>" -Outcome selected -SelectedSkill "<skill name>" -RouteType domain_detail -Category "<category>"
 ```
+
+Run the local self-growth audit after meaningful feedback accumulates, after installing/removing skills, or during a weekly review:
+
+```bash
+python scripts/self-grow.py --index-dir .skill-index
+```
+
+The audit reads the local index and selection memory, then writes:
+
+- `.skill-index/self-growth-report.md`
+- `.skill-index/self-growth-report.json`
+
+Use this report to decide whether to split large categories, adjust local rules, create missing skills, merge overlapping skills, or re-run the scanner. Treat it as an advisory report only; it must not delete or rewrite skills by itself.
 
 Do not directly delete or rewrite unrelated local skills. Default to producing recommendations, indexes, and draft improvements.
 

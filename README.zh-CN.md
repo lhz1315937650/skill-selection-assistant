@@ -13,14 +13,16 @@ Skill Selection Assistant 是一个面向 Codex / Claude Code 类本地技能系
 - 有些技能会触发依赖安装、模型下载、账号配置或外部工具链，直接执行会有风险。
 - 发布给别人使用时，开发者并不知道对方电脑里有哪些 skills，不能硬编码本机分类。
 
-本项目的设计原则是“先路由，再读取”。它先用轻量规则判断任务属于哪个大类，再读取该大类的 shortlist，而不是把所有技能一次性塞进上下文。
+本项目的设计原则是“先路由，再读取”。它先用轻量规则判断任务属于哪个候选池，再读取该候选池的 shortlist，而不是把所有技能一次性塞进上下文。
+
+路由层级不是固定三层。它会根据安装者本机真实 skill 分布自适应选择最小可靠路线：如果一级领域已经足够小，就停在一级；如果二级领域仍然很大，就继续进入具体 specialty；如果 specialty 仍然很大，并且用户请求能识别出任务类型，就继续进入 `specialty + task_type` 的自适应叶子路线。
 
 ## 核心工作流
 
 1. 安装本 skill 后，先扫描使用者本机的 skills 根目录。
 2. 根据 `SKILL.md` 的名称、描述、路径、关键词和触发规则生成多级分类。
-3. 对用户当前对话做意图识别，先确定最可能的一级 / 二级领域。
-4. 只读取该领域下的候选技能 shortlist。
+3. 对用户当前对话做意图识别，确定最小可靠路线，而不是固定停在某一层。
+4. 只读取该路线下的候选技能 shortlist。
 5. 用用户当前对话语言推荐权重最高的一组相关技能，并简短说明用途。
 6. 如果候选技能可能需要安装运行时、依赖、模型、工具链或账号配置，先提醒用户并等待确认。
 7. 用户选择后，将该 skill 作为当前会话的 active skill。
@@ -102,6 +104,7 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recom
 推荐结果应当遵循三个原则：
 
 - 先确定任务分类，再读取对应分类候选，不读取全量技能。
+- 分类层级自适应：能用 `specialty` 或 `adaptive-leaf` 缩小候选池时，就不退回更大的领域池。
 - 根据候选权重动态推荐，不再硬性限制为 1-3 个；强匹配可以少推荐，分数接近时可以多推荐。
 - 默认动态推荐会用 `MinRelevanceScore` 过滤偏题候选，避免大库里“分数高但和当前任务关系弱”的 skill 混进来。
 - 推荐说明使用用户当前对话的语言。
@@ -113,6 +116,7 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recom
 - `manifest.json`：当前本地索引的摘要和版本信息。
 - `route-summary.json`：轻量分类路由摘要。
 - `shortlists/`：每个分类下的候选技能列表。
+- `shortlists/adaptive-leaf/`：根据本机真实 skill 分布生成的自适应叶子路线，例如 `specialty=document-pdf-ocr|task=extract`。
 - `parsed-skills-cache.ndjson`：解析缓存，用于减少重复读取成本。
 - `selection-memory.md`：选择反馈与自增长记忆。
 - `DETAILED_CLASSIFICATION.md`：人类可读的本机 skill 详细分类地图。
@@ -129,6 +133,7 @@ Skill Selection Assistant 的自增长不是自动替用户乱改技能，而是
 - 哪些技能名称相似、职责重叠，需要更细分。
 - 哪些任务没有合适技能，应该提示用户新增或整理 skill。
 - 哪些分类 shortlist 太大，需要进一步拆分以节省 token。
+- 哪些自适应叶子路线仍然太大，需要继续增加新的分诊轴。
 
 随着使用次数增加，它会更清楚“先看哪个分类、读取哪些候选、什么时候需要提醒用户确认环境安装”。
 

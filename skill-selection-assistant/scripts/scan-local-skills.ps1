@@ -31,9 +31,28 @@ function Resolve-SkillsRoot {
 function Get-FrontmatterValue {
   param([string[]]$Lines, [string]$Key)
 
-  foreach ($line in $Lines) {
-    if ($line -match ("^\s*" + [regex]::Escape($Key) + "\s*:\s*(.+?)\s*$")) {
-      return $Matches[1].Trim().Trim('"').Trim("'")
+  $pattern = "^\s*" + [regex]::Escape($Key) + "\s*:\s*(.*?)\s*$"
+  for ($i = 0; $i -lt $Lines.Count; $i++) {
+    $line = $Lines[$i]
+    if ($line -match $pattern) {
+      $value = $Matches[1].Trim()
+      if (($value -eq "|") -or ($value -eq ">") -or ($value -eq "|-") -or ($value -eq ">-") -or ($value -eq "|+") -or ($value -eq ">+")) {
+        $block = @()
+        for ($j = $i + 1; $j -lt $Lines.Count; $j++) {
+          $next = $Lines[$j]
+          if ($next -match "^\s{2,}(.+?)\s*$") {
+            $block += $Matches[1]
+            continue
+          }
+          if ([string]::IsNullOrWhiteSpace($next)) {
+            $block += ""
+            continue
+          }
+          break
+        }
+        return (($block -join " ") -replace "\s+", " ").Trim().Trim('"').Trim("'")
+      }
+      return $value.Trim('"').Trim("'")
     }
   }
   return ""
@@ -210,6 +229,32 @@ function Get-WeightedDomainDetails {
   return @($strong | ForEach-Object { $_.Key })
 }
 
+function Get-WeightedSpecialties {
+  param([string]$NameText, [string]$MetaText, [string]$PreviewText)
+
+  $scores = @{}
+  foreach ($key in $specialtyRules.Keys) {
+    $score = 0
+    $rule = $specialtyRules[$key]
+    if ($NameText -match $rule) { $score += 8 }
+    if ($MetaText -match $rule) { $score += 4 }
+    if ($PreviewText -match $rule) { $score += 1 }
+    if ($score -gt 0) {
+      $scores[$key] = $score
+    }
+  }
+
+  if ($scores.Count -eq 0) {
+    return @("general")
+  }
+
+  $strong = @($scores.GetEnumerator() | Where-Object { $_.Value -ge 4 } | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 5)
+  if ($strong.Count -eq 0) {
+    $strong = @($scores.GetEnumerator() | Sort-Object @{ Expression = "Value"; Descending = $true }, Name | Select-Object -First 2)
+  }
+  return @($strong | ForEach-Object { $_.Key })
+}
+
 function Get-SetupLevel {
   param([string]$Text)
   if ($Text -match "api key|token|account|login|oauth|cookie|credential") { return "account" }
@@ -230,6 +275,7 @@ function New-RouteEntry {
     canonical_name = $Skill.canonical_name
     primary_domain = $Skill.primary_domain
     domain_detail = $Skill.domain_detail
+    specialty = @($Skill.specialty)
     task_type = $Skill.task_type
     output_type = $Skill.output_type
     setup_level = $Skill.setup_level
@@ -300,6 +346,7 @@ $skillDir = Split-Path -Parent $PSScriptRoot
 $ruleConfig = Import-RuleConfig -SkillDir $skillDir
 $RulesSchemaVersion = [string]$ruleConfig.schema_version
 $domainDetailRules = ConvertTo-OrderedHashtable -Object $ruleConfig.domain_detail_rules
+$specialtyRules = ConvertTo-OrderedHashtable -Object $ruleConfig.specialty_rules
 $domainMap = ConvertTo-OrderedHashtable -Object $ruleConfig.primary_map
 $taskRules = ConvertTo-OrderedHashtable -Object $ruleConfig.task_rules
 $outputRules = ConvertTo-OrderedHashtable -Object $ruleConfig.output_rules
@@ -307,8 +354,8 @@ if (-not $OutputDir) {
   $OutputDir = Join-Path $skillDir ".skill-index"
 }
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-$OutputSchemaVersion = "1.5.11"
-$ParserSchemaVersion = "1.0"
+$OutputSchemaVersion = "1.6.0"
+$ParserSchemaVersion = "1.1"
 $manifestPath = Join-Path $OutputDir "manifest.json"
 $parseCachePath = Join-Path $OutputDir "parsed-skills-cache.ndjson"
 $legacyParseCachePath = Join-Path $OutputDir "parsed-skills-cache.json"
@@ -396,6 +443,7 @@ foreach ($file in $skillFiles) {
   $combined = "$name`n$description`n$short`n$preview".ToLowerInvariant()
 
   $domainDetail = @(Get-WeightedDomainDetails -NameText $nameText -MetaText $metaText -PreviewText $previewText)
+  $specialty = @(Get-WeightedSpecialties -NameText $nameText -MetaText $metaText -PreviewText $previewText)
   $domain = @()
   foreach ($detail in $domainDetail) {
     if ($domainMap.ContainsKey($detail)) {
@@ -423,6 +471,7 @@ foreach ($file in $skillFiles) {
     domain = $domain
     primary_domain = Get-PrimaryDomain -Details $domainDetail -Domains $domain
     domain_detail = $domainDetail
+    specialty = @($specialty)
     task_type = @(Get-CategoryMatches -Text $combined -Rules $taskRules -Fallback "workflow")
     output_type = @(Get-CategoryMatches -Text $combined -Rules $outputRules -Fallback "workflow")
     setup_level = $setupLevel
@@ -500,6 +549,7 @@ $rawItems | Group-Object canonical_name | ForEach-Object {
     $sourceOrigins = Join-UniqueValues -Values ($group | ForEach-Object { $_.origin })
     $domains = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain })
     $domainDetails = Join-UniqueValues -Values ($group | ForEach-Object { $_.domain_detail })
+    $specialties = Join-UniqueValues -Values ($group | ForEach-Object { $_.specialty })
     $taskTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.task_type })
     $outputTypes = Join-UniqueValues -Values ($group | ForEach-Object { $_.output_type })
     $contentHash = $representative.content_hash
@@ -530,6 +580,7 @@ $rawItems | Group-Object canonical_name | ForEach-Object {
       domain = $domains
       primary_domain = Get-PrimaryDomain -Details $domainDetails -Domains $domains
       domain_detail = $domainDetails
+      specialty = @($specialties)
       task_type = $taskTypes
       output_type = $outputTypes
       setup_level = $representative.setup_level
@@ -562,10 +613,14 @@ $index | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $OutputD
 $routesDir = Join-Path $OutputDir "routes"
 $primaryRoutesDir = Join-Path $routesDir "primary-domain"
 $detailRoutesDir = Join-Path $routesDir "domain-detail"
+$specialtyRoutesDir = Join-Path $routesDir "specialty"
+$adaptiveLeafRoutesDir = Join-Path $routesDir "adaptive-leaf"
 $taskRoutesDir = Join-Path $routesDir "task-type"
 $shortlistsDir = Join-Path $OutputDir "shortlists"
 $primaryShortlistsDir = Join-Path $shortlistsDir "primary-domain"
 $detailShortlistsDir = Join-Path $shortlistsDir "domain-detail"
+$specialtyShortlistsDir = Join-Path $shortlistsDir "specialty"
+$adaptiveLeafShortlistsDir = Join-Path $shortlistsDir "adaptive-leaf"
 $taskShortlistsDir = Join-Path $shortlistsDir "task-type"
 
 $outputRoot = (Resolve-Path -LiteralPath $OutputDir).Path
@@ -579,17 +634,25 @@ foreach ($generatedDir in @($routesDir, $shortlistsDir)) {
 }
 
 if ($IncludeFullRoutes) {
-  New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $taskRoutesDir | Out-Null
+  New-Item -ItemType Directory -Force -Path $primaryRoutesDir, $detailRoutesDir, $specialtyRoutesDir, $adaptiveLeafRoutesDir, $taskRoutesDir | Out-Null
 }
-New-Item -ItemType Directory -Force -Path $primaryShortlistsDir, $detailShortlistsDir, $taskShortlistsDir | Out-Null
+New-Item -ItemType Directory -Force -Path $primaryShortlistsDir, $detailShortlistsDir, $specialtyShortlistsDir, $adaptiveLeafShortlistsDir, $taskShortlistsDir | Out-Null
 $ShortlistLimit = 200
 $primaryRouteMap = @{}
 $detailRouteMap = @{}
+$specialtyRouteMap = @{}
+$adaptiveLeafRouteMap = @{}
 $taskRouteMap = @{}
 foreach ($item in $items) {
   Add-RouteMapItem -Map $primaryRouteMap -Key $item.primary_domain -Item $item
   foreach ($detail in @($item.domain_detail)) {
     Add-RouteMapItem -Map $detailRouteMap -Key $detail -Item $item
+  }
+  foreach ($specialty in @($item.specialty)) {
+    Add-RouteMapItem -Map $specialtyRouteMap -Key $specialty -Item $item
+    foreach ($task in @($item.task_type)) {
+      Add-RouteMapItem -Map $adaptiveLeafRouteMap -Key ("specialty=" + $specialty + "|task=" + $task) -Item $item
+    }
   }
   foreach ($task in @($item.task_type)) {
     Add-RouteMapItem -Map $taskRouteMap -Key $task -Item $item
@@ -609,9 +672,11 @@ $routeSummary = [ordered]@{
   duplicate_groups = $duplicateGroups.Count
   duplicates_removed = ($rawItems.Count - $items.Count)
   full_routes_generated = [bool]$IncludeFullRoutes
-  route_rule = "Read this summary first, choose one primary_domain/domain_detail/task_type, then read the matching shortlist before reading full route files or candidate SKILL.md files. Full route files are generated only when scan-local-skills.ps1 is run with -IncludeFullRoutes."
+  route_rule = "Adaptive triage: choose the smallest reliable route. Start with primary_domain/domain_detail/specialty, then use adaptive_leaf routes such as specialty+task_type when they reduce the candidate pool. Read only the matching shortlist before reading candidate SKILL.md files."
   primary_domain = @()
   domain_detail = @()
+  specialty = @()
+  adaptive_leaf = @()
   task_type = @()
 }
 
@@ -623,7 +688,7 @@ $routeSummaryLines.Add("- Raw skills: " + $rawItems.Count)
 $routeSummaryLines.Add("- Deduplicated skills: " + $items.Count)
 $routeSummaryLines.Add("- Shortlist limit per route: " + $ShortlistLimit)
 $routeSummaryLines.Add("- Full routes generated: " + [bool]$IncludeFullRoutes)
-$routeSummaryLines.Add("- Rule: determine category first, then read only the matching shortlist file. Generate full route files only for audits.")
+$routeSummaryLines.Add("- Rule: adaptive triage. Pick the smallest reliable route; use adaptive leaf routes when they reduce a large bucket. Generate full route files only for audits.")
 $routeSummaryLines.Add("")
 
 $routeSummaryLines.Add("## Primary Domain Routes")
@@ -703,6 +768,100 @@ $routeSummary.domain_detail | ForEach-Object {
 }
 $routeSummaryLines.Add("")
 
+$routeSummaryLines.Add("## Specialty Routes")
+$routeSummaryLines.Add("")
+foreach ($specialtyEntry in $specialtyRouteMap.GetEnumerator()) {
+  $specialty = [string]$specialtyEntry.Key
+  $groupItems = @($specialtyEntry.Value)
+  $fileName = (Get-SafeFileName -Name $specialty) + ".json"
+  $routePath = Join-Path $specialtyRoutesDir $fileName
+  $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
+  $relativeRoutePath = ""
+  if ($IncludeFullRoutes) {
+    $routeObject = [pscustomobject]@{
+      generated_at = $index.generated_at
+      route_type = "specialty"
+      category = $specialty
+      count = $entries.Count
+      candidates = $entries
+    }
+    $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
+    $relativeRoutePath = "routes/specialty/" + $fileName
+  }
+  $shortlistPath = Join-Path $specialtyShortlistsDir $fileName
+  $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
+  $shortlistObject = [pscustomobject]@{
+    generated_at = $index.generated_at
+    route_type = "specialty"
+    category = $specialty
+    source_count = $entries.Count
+    count = $shortlistEntries.Count
+    candidates = $shortlistEntries
+  }
+  $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
+  $relativeShortlistPath = "shortlists/specialty/" + $fileName
+  $routeSummary.specialty += [pscustomobject]@{ name = $specialty; count = $entries.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
+}
+$routeSummary.specialty = @($routeSummary.specialty | Sort-Object @{ Expression = "count"; Descending = $true }, name)
+$routeSummary.specialty | ForEach-Object {
+  $routeSummaryLines.Add(('- `{0}`: {1}; route `{2}`; shortlist `{3}` ({4})' -f $_.name, $_.count, $(if ($_.file) { $_.file } else { "not generated" }), $_.shortlist_file, $_.shortlist_count))
+}
+$routeSummaryLines.Add("")
+
+$routeSummaryLines.Add("## Adaptive Leaf Routes")
+$routeSummaryLines.Add("")
+$AdaptiveLeafMinCount = 1
+foreach ($leafEntry in $adaptiveLeafRouteMap.GetEnumerator()) {
+  $leaf = [string]$leafEntry.Key
+  $groupItems = @($leafEntry.Value)
+  if ($groupItems.Count -lt $AdaptiveLeafMinCount) { continue }
+  $fileName = (Get-SafeFileName -Name $leaf) + ".json"
+  $routePath = Join-Path $adaptiveLeafRoutesDir $fileName
+  $entries = @($groupItems | Sort-Object name | ForEach-Object { New-RouteEntry -Skill $_ })
+  $relativeRoutePath = ""
+  $parentCategory = ""
+  $taskCategory = ""
+  if ($leaf -match "^specialty=(.+?)\|task=(.+)$") {
+    $parentCategory = $Matches[1]
+    $taskCategory = $Matches[2]
+  }
+  if ($IncludeFullRoutes) {
+    $routeObject = [pscustomobject]@{
+      generated_at = $index.generated_at
+      route_type = "adaptive_leaf"
+      category = $leaf
+      parent_route_type = "specialty"
+      parent_category = $parentCategory
+      task_type = $taskCategory
+      count = $entries.Count
+      candidates = $entries
+    }
+    $routeObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $routePath -Encoding UTF8
+    $relativeRoutePath = "routes/adaptive-leaf/" + $fileName
+  }
+  $shortlistPath = Join-Path $adaptiveLeafShortlistsDir $fileName
+  $shortlistEntries = @($entries | Sort-Object @{ Expression = { Get-RoutePriority -Entry $_ }; Descending = $true }, name | Select-Object -First $ShortlistLimit)
+  $shortlistObject = [pscustomobject]@{
+    generated_at = $index.generated_at
+    route_type = "adaptive_leaf"
+    category = $leaf
+    parent_route_type = "specialty"
+    parent_category = $parentCategory
+    task_type = $taskCategory
+    source_count = $entries.Count
+    count = $shortlistEntries.Count
+    candidates = $shortlistEntries
+  }
+  $shortlistObject | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $shortlistPath -Encoding UTF8
+  $relativeShortlistPath = "shortlists/adaptive-leaf/" + $fileName
+  $routeSummary.adaptive_leaf += [pscustomobject]@{ name = $leaf; parent_route_type = "specialty"; parent_category = $parentCategory; task_type = $taskCategory; count = $entries.Count; file = $relativeRoutePath; shortlist_file = $relativeShortlistPath; shortlist_count = $shortlistEntries.Count }
+}
+$routeSummary.adaptive_leaf = @($routeSummary.adaptive_leaf | Sort-Object @{ Expression = "count"; Descending = $true }, name)
+$routeSummary.adaptive_leaf | Select-Object -First 200 | ForEach-Object {
+  $routeSummaryLines.Add(('- `{0}`: {1}; parent `{2}/{3}`; task `{4}`; shortlist `{5}` ({6})' -f $_.name, $_.count, $_.parent_route_type, $_.parent_category, $_.task_type, $_.shortlist_file, $_.shortlist_count))
+}
+$routeSummaryLines.Add("")
+
 $routeSummaryLines.Add("## Task Type Routes")
 $routeSummaryLines.Add("")
 foreach ($taskEntry in $taskRouteMap.GetEnumerator()) {
@@ -761,7 +920,7 @@ $items | Group-Object origin | Sort-Object Name | ForEach-Object {
   $categoryLines.Add("## Origin: " + $_.Name)
   $categoryLines.Add("")
   $_.Group | Sort-Object name | ForEach-Object {
-    $categoryLines.Add('- `' + $_.name + '` | primary: ' + $_.primary_domain + ' | detail: ' + ($_.domain_detail -join ', ') + ' | task: ' + ($_.task_type -join ', ') + ' | setup: ' + $_.setup_level + ' | dupes: ' + $_.duplicate_count)
+    $categoryLines.Add('- `' + $_.name + '` | primary: ' + $_.primary_domain + ' | detail: ' + ($_.domain_detail -join ', ') + ' | specialty: ' + ($_.specialty -join ', ') + ' | task: ' + ($_.task_type -join ', ') + ' | setup: ' + $_.setup_level + ' | dupes: ' + $_.duplicate_count)
   }
   $categoryLines.Add("")
 }

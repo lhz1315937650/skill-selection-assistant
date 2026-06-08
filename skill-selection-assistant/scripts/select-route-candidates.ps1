@@ -2,7 +2,7 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$Query,
 
-  [ValidateSet("primary_domain", "domain_detail", "task_type")]
+  [ValidateSet("primary_domain", "domain_detail", "specialty", "adaptive_leaf", "task_type")]
   [string]$RouteType = "domain_detail",
 
   [Parameter(Mandatory = $true)]
@@ -12,7 +12,7 @@ param(
   [int]$MaxRecommendations = 8,
   [int]$MinRecommendations = 1,
   [int]$ScoreWindow = 3,
-  [int]$MinRelevanceScore = 2,
+  [int]$MinRelevanceScore = 3,
   [string]$IndexDir = "",
   [switch]$UseFullRoute,
   [switch]$KeepVariants
@@ -170,6 +170,8 @@ if (-not $IndexDir) {
 $routeFolder = switch ($RouteType) {
   "primary_domain" { "primary-domain" }
   "domain_detail" { "domain-detail" }
+  "specialty" { "specialty" }
+  "adaptive_leaf" { "adaptive-leaf" }
   "task_type" { "task-type" }
 }
 
@@ -192,6 +194,13 @@ $queryTokens = Get-TokenList -Text $Query
 $tokens = Get-TokenList -Text ($Query + " " + $Category)
 $usefulQueryTokens = Get-UsefulQueryTokens -Tokens $queryTokens
 $categoryTokens = Get-TokenList -Text $Category
+$leafSpecialty = ""
+$leafTask = ""
+if (($RouteType -eq "adaptive_leaf") -and ($Category -match "^specialty=(.+?)\|task=(.+)$")) {
+  $leafSpecialty = $Matches[1]
+  $leafTask = $Matches[2]
+  $categoryTokens = Get-TokenList -Text ($leafSpecialty + " " + $leafTask)
+}
 $memoryScores = Import-SelectionMemoryScores -Path (Join-Path $IndexDir "selection-memory.md") -Category $Category
 $queryLower = $Query.ToLowerInvariant()
 $expandedQueryTokens = [System.Collections.ArrayList]::new()
@@ -205,8 +214,6 @@ Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x5B66,0x672F) -Add @("academic", "research", "paper")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x8BBA,0x6587) -Add @("paper", "academic", "research", "literature")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x5F15,0x7528) -Add @("citation", "reference", "bibliography")
-Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x77E5,0x8BC6,0x5E93) -Add @("knowledge", "notes", "obsidian", "wiki", "vault")
-Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x7B14,0x8BB0) -Add @("notes", "knowledge", "wiki")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6570,0x636E) -Add @("data", "analysis", "analytics", "spreadsheet")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x8868) -Add @("chart", "visualization", "dataviz", "plot")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x4EE3,0x7801) -Add @("code", "coding", "programming")
@@ -214,6 +221,19 @@ Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x68C0,0x67E5) -Add @("review", "audit", "check", "debug")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x7247) -Add @("image", "visual", "design")
 Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x56FE,0x50CF) -Add @("image", "visual", "design")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6587,0x6863) -Add @("document", "file", "pdf", "extract", "parse")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6587,0x4EF6) -Add @("document", "file", "extract", "parse")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x63D0,0x53D6) -Add @("extract", "parse", "text", "ocr")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x89E3,0x6790) -Add @("parse", "extract", "text")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x77E5,0x8BC6,0x5E93) -Add @("knowledge", "notes", "obsidian", "vault", "wiki")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x7B14,0x8BB0) -Add @("notes", "notebook", "knowledge", "markdown")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6574,0x7406) -Add @("organize", "structure", "summarize", "knowledge")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6280,0x80FD) -Add @("skill", "skills")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x8DEF,0x7531) -Add @("router", "routing", "route", "selection")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x81EA,0x751F,0x957F) -Add @("self-growth", "self-growing", "growth", "index", "memory")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x81EA,0x589E,0x957F) -Add @("self-growth", "self-growing", "growth", "index", "memory")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x672C,0x673A,0x73AF,0x5883) -Add @("local", "machine", "skills", "index")
+Add-TokenIfContainsUWord -Tokens $expandedQueryTokens -Text $queryLower -Codes @(0x6D6A,0x8D39) -Add @("token", "shortlist", "minimize")
 $usefulQueryTokens = @($expandedQueryTokens | Sort-Object -Unique)
 $wantsVisual = (
   $queryLower.Contains("ui") -or
@@ -237,6 +257,7 @@ $scored = foreach ($candidate in @($route.candidates)) {
     $candidate.name,
     $candidate.short_description,
     (@($candidate.domain_detail) -join " "),
+    (@($candidate.specialty) -join " "),
     (@($candidate.task_type) -join " "),
     (@($candidate.output_type) -join " "),
     $candidate.relative_path
@@ -263,6 +284,18 @@ $scored = foreach ($candidate in @($route.candidates)) {
   }
 
   if (@($candidate.domain_detail) -contains $Category) { $score += 8 }
+  if (@($candidate.specialty) -contains $Category) {
+    $score += 14
+    $relevanceScore += 2
+  }
+  if ($leafSpecialty -and (@($candidate.specialty) -contains $leafSpecialty)) {
+    $score += 14
+    $relevanceScore += 2
+  }
+  if ($leafTask -and (@($candidate.task_type) -contains $leafTask)) {
+    $score += 10
+    $relevanceScore += 1
+  }
   if ($candidate.primary_domain -eq $Category) { $score += 8 }
   if (@($candidate.task_type) -contains $Category) { $score += 5 }
   if ([int]$candidate.duplicate_count -gt 1) { $score += [Math]::Min([int]$candidate.duplicate_count, 6) }
@@ -289,6 +322,7 @@ $scored = foreach ($candidate in @($route.candidates)) {
     $memoryScore = [int]$memoryScores[$canonicalName]
     $score += $memoryScore
   }
+  $score += ($relevanceScore * 4)
 
   $candidateResult = [pscustomobject]@{
     score = $score
@@ -298,6 +332,7 @@ $scored = foreach ($candidate in @($route.candidates)) {
     reason_hint = $candidate.short_description
     primary_domain = $candidate.primary_domain
     domain_detail = $candidate.domain_detail
+    specialty = $candidate.specialty
     task_type = $candidate.task_type
     setup_level = $candidate.setup_level
     origin = $candidate.origin
@@ -345,9 +380,6 @@ else {
   $selectionMode = "dynamic_score_window"
   $top = @()
   $eligible = @($sorted | Where-Object { [int]$_.relevance_score -ge $MinRelevanceScore })
-  if ($eligible.Count -eq 0) {
-    $eligible = $sorted
-  }
   if ($eligible.Count -gt 0) {
     $topScore = [int]$eligible[0].score
     $scoreThreshold = $topScore - $ScoreWindow
@@ -355,6 +387,9 @@ else {
     if ($top.Count -lt $MinRecommendations) {
       $top = @($eligible | Select-Object -First ([Math]::Min($MinRecommendations, $eligible.Count)))
     }
+  }
+  else {
+    $selectionMode = "low_confidence_no_match"
   }
 }
 

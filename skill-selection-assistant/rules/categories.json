@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.5",
   "domain_detail_rules": {
     "academic-research": "academic|paper|literature|citation|arxiv|research|scholar|thesis|abstract|methodology|empirical|experiment",
     "writing-editing": "writing|writer|article|blog|copy|proofread|polish|tone|grammar|humanizer|story|outline",
@@ -7,30 +7,72 @@
     "document-processing": "pdf|docx|document|word|latex|ocr|text extraction|forms|file|parse|extract",
     "presentation-slides": "pptx|ppt|slide|deck|presentation",
     "spreadsheet-data": "excel|xlsx|spreadsheet|csv|table|stata|spss|sas",
-    "data-analysis": "data|analysis|analytics|benchmark|metrics|statistics|forecast",
-    "data-visualization": "visualization|dataviz|chart|plot|dashboard|d3|graph|figure|diagram",
+    "data-analysis": "data|analysis|analytics|visualization|dashboard|chart|benchmark|metrics|statistics|forecast",
     "ai-ml": "\\bai\\b|ml|machine learning|llm|model|prompt|agent|rag|embedding|neural|classifier",
-    "coding-general": "code|coding|developer|software|programming|program|script|refactor|typescript|javascript|python|java|golang|rust|bot|plugin",
-    "project-maintenance": "project|workspace|repo|repository|readme|onboarding|structure|architecture|cleanup|guideline|project guideline",
-    "skill-management": "\\bskill\\b|skills|skill-selection|skill-router|skill-installer|skill-creator|skill-improver|skill-scanner|claude skill|codex skill",
+    "coding-general": "code|coding|developer|software|programming|program|script|refactor|architecture|typescript|javascript|python|java|golang|rust|project|workspace|repo|repository|readme|bot|plugin",
     "frontend-web": "frontend|front-end|react|vue|html|css|web|browser|ui|ux|tailwind|website|component|web page",
     "backend-api": "api|backend|server|database|sql|webhook|sdk|mcp|graphql|rest",
     "testing-debugging": "test|debug|ci|qa|tdd|unit|integration|bug|fix|diagnose",
-    "devops-git": "git|github|deploy|docker|kubernetes|ci/cd|release|commit|repo",
-    "security-risk": "security|risk|guardrail|safety|privacy|auth|oauth|token|audit",
-    "legal-compliance": "legal|law|contract|compliance|policy|privacy|regulation|risk",
+    "devops-git": "git|github|github actions|actions|deploy|docker|kubernetes|\\bci\\b|ci/cd|release|commit|repo",
+    "security-risk": "security|risk|guardrail|safety|privacy|auth|oauth|token|compliance|audit",
     "visual-design": "image|design|diagram|cover|comic|visual|poster|logo|infographic|canvas|figma",
     "media-video-audio": "video|audio|youtube|transcript|subtitle|podcast",
     "publishing-social": "publish|post|wechat|weibo|xhs|twitter|social|newsletter",
-    "business-product": "product|prd|market|sales|customer|business|strategy|roadmap",
-    "finance-analysis": "finance|financial|valuation|dcf|stock|trading|accounting|budget|portfolio",
+    "business-product": "product|prd|market|sales|customer|finance|business|strategy|roadmap",
     "automation-integration": "automation|integrat|connector|composio|zapier|workflow",
-    "browser-automation": "browser|playwright|selenium|web automation|crawl|crawler|scrape|scraper",
-    "agent-workflow": "agent|multi-agent|orchestrator|workflow|autonomous|planner|tool use",
+    "project-maintenance": "project|workspace|repo|repository|readme|onboarding|structure|architecture|cleanup|guideline|project guideline",
+    "skill-management": "\\bskill\\b|skills|skill-selection|skill-router|skill-installer|skill-creator|skill-improver|skill-scanner|claude skill|codex skill",
+    "data-visualization": "visualization|dataviz|chart|plot|dashboard|d3|graph|figure|diagram",
     "research-citation": "citation|reference|bibliography|bibtex|zotero|literature review|paper review|academic paper",
     "knowledge-management": "obsidian|knowledge|notes|zettelkasten|vault|wiki|memory|knowledge graph|notebook",
+    "browser-automation": "browser|playwright|selenium|web automation|crawl|crawler|scrape|scraper",
+    "agent-workflow": "agent|multi-agent|orchestrator|agent workflow|agentic workflow|autonomous|planner|tool use",
+    "finance-analysis": "finance|financial|valuation|dcf|stock|trading|accounting|budget|portfolio",
     "health-biomedical": "biomedical|clinical|medical|health|fhir|patient|trial|pharma|single-cell",
+    "legal-compliance": "legal|law|contract|compliance|policy|privacy|regulation|risk",
     "education-learning": "education|course|teaching|lesson|study|assessment|learning|student"
+  },
+  "specialty_rules": {
+    "frontend-react-vue": "react|vue|component|spa|frontend component|jsx|tsx",
+    "frontend-style-ui": "ui|ux|css|tailwind|responsive|layout|design system|interface|visual style",
+    "frontend-browser-mcp": "browser|playwright|selenium|web automation|mcp browser|page automation",
+    "backend-api-design": "api|rest|graphql|endpoint|webhook|sdk|backend",
+    "backend-database": "database|sql|postgres|mysql|sqlite|mongodb|schema|orm|migration",
+    "backend-server-runtime": "server|node|express|fastapi|django|flask|service|microservice",
+    "devops-ci-release": "github actions|actions|\\bci\\b|ci/cd|release|deploy|pipeline|workflow yaml",
+    "devops-containers": "docker|kubernetes|container|compose|helm|cluster",
+    "git-repo-maintenance": "\\bgit\\b|git repo|github repo|commit|branch|pull request|\\bpr\\b|changelog|version control",
+    "testing-unit-debug": "unit test|integration test|pytest|jest|debug|bug|fix|diagnose|troubleshoot",
+    "security-auth-privacy": "auth|oauth|token|credential|privacy|permission|secrets|api key",
+    "security-audit-risk": "security|risk|guardrail|safety|compliance|audit|threat|vulnerability",
+    "skill-router-selection": "skill-selection|skill router|skill-routing|recommend skill|select skill|技能选择|选择助手",
+    "skill-authoring-install": "skill creator|skill-creator|skill installer|skill-installer|write a skill|create skill|install skill",
+    "skill-self-growth": "self-growth|self growing|self-growing|自生长|自增长|selection memory|route summary|skill index",
+    "project-structure-readme": "project structure|workspace|readme|onboarding|folder structure|directory|cleanup",
+    "knowledge-obsidian-vault": "obsidian|vault|zettelkasten|knowledge base|knowledge graph|wiki|notes",
+    "knowledge-ingest-distill": "ingest|distill|summarize notes|source note|knowledge note|weekly distill|蒸馏",
+    "document-pdf-ocr": "pdf|ocr|text extraction|extract text|parse pdf",
+    "document-docx-latex": "docx|word|latex|document|forms",
+    "slides-pptx-deck": "pptx|ppt|slide|deck|presentation",
+    "spreadsheet-excel-csv": "excel|xlsx|spreadsheet|csv|table",
+    "data-statistics-analysis": "statistics|metrics|analysis|analytics|benchmark|forecast|regression",
+    "data-visual-chart": "visualization|dataviz|chart|plot|dashboard|graph|d3|figure",
+    "ai-llm-prompt-rag": "llm|prompt|rag|embedding|vector|retrieval|agent|model",
+    "ai-ml-evaluation": "machine learning|classifier|neural|benchmark|eval|evaluation|fine-tune",
+    "research-literature-review": "literature review|paper review|academic paper|scholar|arxiv|citation|bibliography",
+    "research-methodology": "methodology|experiment|empirical|ablation|replication|thesis",
+    "writing-polish-article": "writing|article|blog|copy|proofread|polish|tone|grammar|humanizer",
+    "translation-bilingual": "translate|translation|localization|bilingual|language",
+    "visual-image-design": "image|poster|logo|cover|infographic|figma|canvas|visual",
+    "media-video-audio": "video|audio|youtube|transcript|subtitle|podcast",
+    "publishing-social-content": "publish|post|wechat|weibo|xhs|twitter|newsletter|social",
+    "business-product-prd": "product|prd|roadmap|strategy|market|customer|sales",
+    "finance-valuation-trading": "finance|financial|valuation|dcf|stock|trading|accounting|portfolio",
+    "health-clinical-biomed": "biomedical|clinical|medical|health|fhir|patient|trial|pharma|single-cell",
+    "legal-contract-policy": "legal|law|contract|policy|regulation|compliance",
+    "education-course-learning": "education|course|teaching|lesson|study|assessment|learning|student",
+    "automation-connectors": "automation|integration|connector|composio|zapier|workflow automation",
+    "browser-scraping-crawl": "scrape|scraper|crawl|crawler|web fetch|web search"
   },
   "primary_map": {
     "academic-research": "research",
@@ -40,28 +82,28 @@
     "presentation-slides": "documents",
     "spreadsheet-data": "data",
     "data-analysis": "data",
-    "data-visualization": "data",
     "ai-ml": "coding",
     "coding-general": "coding",
-    "project-maintenance": "coding",
-    "skill-management": "coding",
     "frontend-web": "coding",
     "backend-api": "coding",
     "testing-debugging": "coding",
     "devops-git": "coding",
     "security-risk": "safety",
-    "legal-compliance": "safety",
     "visual-design": "design",
     "media-video-audio": "design",
     "publishing-social": "publishing",
     "business-product": "data",
-    "finance-analysis": "data",
     "automation-integration": "coding",
-    "browser-automation": "coding",
-    "agent-workflow": "coding",
+    "project-maintenance": "coding",
+    "skill-management": "coding",
+    "data-visualization": "data",
     "research-citation": "research",
     "knowledge-management": "documents",
+    "browser-automation": "coding",
+    "agent-workflow": "coding",
+    "finance-analysis": "data",
     "health-biomedical": "research",
+    "legal-compliance": "safety",
     "education-learning": "research"
   },
   "task_rules": {
@@ -87,47 +129,401 @@
     "report": "report|brief|summary"
   },
   "query_cn_detail_words": {
-    "frontend-web": ["\u524d\u7aef", "\u9875\u9762", "\u7f51\u9875", "\u754c\u9762", "\u7f51\u7ad9", "\u7ec4\u4ef6"],
-    "backend-api": ["\u540e\u7aef", "\u63a5\u53e3", "\u6570\u636e\u5e93", "\u670d\u52a1\u7aef"],
-    "testing-debugging": ["\u6d4b\u8bd5", "\u8c03\u8bd5", "\u62a5\u9519", "\u4fee\u590d", "\u8bca\u65ad"],
-    "academic-research": ["\u8bba\u6587", "\u5b66\u672f", "\u7814\u7a76", "\u6587\u732e", "\u5f15\u7528"],
-    "document-processing": ["\u6587\u6863", "\u6587\u4ef6", "\u63d0\u53d6", "\u89e3\u6790"],
-    "presentation-slides": ["\u5e7b\u706f\u7247", "\u6f14\u793a", "\u6c47\u62a5"],
-    "spreadsheet-data": ["\u8868\u683c", "\u7535\u5b50\u8868\u683c"],
-    "data-analysis": ["\u6570\u636e", "\u5206\u6790", "\u7edf\u8ba1", "\u6307\u6807"],
-    "data-visualization": ["\u56fe\u8868", "\u53ef\u89c6\u5316", "\u4eea\u8868\u76d8", "\u753b\u56fe", "\u56fe\u5f62"],
-    "visual-design": ["\u56fe\u7247", "\u8bbe\u8ba1", "\u6d77\u62a5", "\u5c01\u9762", "\u89c6\u89c9"],
-    "publishing-social": ["\u53d1\u5e03", "\u516c\u4f17\u53f7", "\u5c0f\u7ea2\u4e66", "\u5fae\u535a", "\u63a8\u6587"],
-    "writing-editing": ["\u6587\u7ae0", "\u5199\u4f5c", "\u6da6\u8272", "\u6539\u5199", "\u6587\u6848"],
-    "translation-localization": ["\u7ffb\u8bd1", "\u672c\u5730\u5316", "\u53cc\u8bed"],
-    "security-risk": ["\u5b89\u5168", "\u98ce\u9669", "\u9690\u79c1", "\u5ba1\u8ba1"],
-    "legal-compliance": ["\u6cd5\u5f8b", "\u5408\u540c", "\u5408\u89c4", "\u653f\u7b56", "\u9690\u79c1"],
-    "devops-git": ["\u90e8\u7f72", "\u63d0\u4ea4", "\u4ed3\u5e93", "\u7248\u672c"],
-    "ai-ml": ["\u673a\u5668\u5b66\u4e60", "\u6a21\u578b", "\u667a\u80fd\u4f53", "\u63d0\u793a\u8bcd"],
-    "automation-integration": ["\u81ea\u52a8\u5316", "\u6d41\u7a0b", "\u96c6\u6210", "\u8fde\u63a5\u5668"],
-    "browser-automation": ["\u6d4f\u89c8\u5668", "\u7f51\u9875\u81ea\u52a8\u5316", "\u722c\u53d6", "\u6293\u53d6", "playwright"],
-    "agent-workflow": ["\u667a\u80fd\u4f53", "agent", "\u5de5\u4f5c\u6d41", "\u7f16\u6392", "\u81ea\u52a8\u6267\u884c"],
-    "business-product": ["\u4ea7\u54c1", "\u9700\u6c42", "\u5546\u4e1a", "\u5e02\u573a", "\u9500\u552e"],
-    "finance-analysis": ["\u91d1\u878d", "\u8d22\u52a1", "\u4f30\u503c", "\u80a1\u7968", "\u4ea4\u6613"],
-    "research-citation": ["\u5f15\u7528", "\u53c2\u8003\u6587\u732e", "\u6587\u732e\u7efc\u8ff0", "\u8bba\u6587\u8bc4\u5ba1"],
-    "knowledge-management": ["\u77e5\u8bc6\u5e93", "\u7b14\u8bb0", "Obsidian", "\u77e5\u8bc6\u56fe\u8c31", "vault"],
-    "health-biomedical": ["\u533b\u5b66", "\u4e34\u5e8a", "\u5065\u5eb7", "\u751f\u7269", "\u836f\u7269"],
-    "education-learning": ["\u6559\u80b2", "\u8bfe\u7a0b", "\u5b66\u4e60", "\u6559\u5b66", "\u5b66\u751f"],
-    "media-video-audio": ["\u89c6\u9891", "\u97f3\u9891", "\u5b57\u5e55", "\u8f6c\u5f55"],
-    "project-maintenance": ["\u9879\u76ee", "\u4ed3\u5e93", "\u7ed3\u6784", "README", "\u76ee\u5f55", "\u6574\u7406", "\u5de5\u7a0b"],
-    "skill-management": ["\u6280\u80fd", "skill", "\u9009\u62e9\u52a9\u624b", "\u8def\u7531", "\u5b89\u88c5\u6280\u80fd", "\u6280\u80fd\u5e93"],
-    "coding-general": ["\u4ee3\u7801", "\u7f16\u7a0b", "\u811a\u672c", "\u5f00\u53d1", "\u673a\u5668\u4eba", "\u63d2\u4ef6"]
+    "frontend-web": [
+      "前端",
+      "页面",
+      "网页",
+      "界面",
+      "网站",
+      "组件"
+    ],
+    "backend-api": [
+      "后端",
+      "接口",
+      "数据库",
+      "服务端"
+    ],
+    "testing-debugging": [
+      "测试",
+      "调试",
+      "报错",
+      "修复",
+      "诊断"
+    ],
+    "academic-research": [
+      "论文",
+      "学术",
+      "研究",
+      "文献",
+      "引用"
+    ],
+    "document-processing": [
+      "文档",
+      "文件",
+      "提取",
+      "解析"
+    ],
+    "presentation-slides": [
+      "幻灯片",
+      "演示",
+      "汇报"
+    ],
+    "spreadsheet-data": [
+      "表格",
+      "电子表格"
+    ],
+    "data-analysis": [
+      "数据",
+      "分析",
+      "图表",
+      "可视化"
+    ],
+    "visual-design": [
+      "图片",
+      "设计",
+      "海报",
+      "封面",
+      "视觉"
+    ],
+    "publishing-social": [
+      "发布",
+      "公众号",
+      "小红书",
+      "微博",
+      "推文"
+    ],
+    "writing-editing": [
+      "文章",
+      "写作",
+      "润色",
+      "改写",
+      "文案"
+    ],
+    "translation-localization": [
+      "翻译",
+      "本地化",
+      "双语"
+    ],
+    "security-risk": [
+      "安全",
+      "风险",
+      "隐私",
+      "审计"
+    ],
+    "devops-git": [
+      "部署",
+      "提交",
+      "仓库",
+      "版本"
+    ],
+    "ai-ml": [
+      "机器学习",
+      "模型",
+      "智能体",
+      "提示词"
+    ],
+    "automation-integration": [
+      "自动化",
+      "流程",
+      "集成",
+      "连接器"
+    ],
+    "business-product": [
+      "产品",
+      "需求",
+      "商业",
+      "市场",
+      "销售"
+    ],
+    "media-video-audio": [
+      "视频",
+      "音频",
+      "字幕",
+      "转录"
+    ],
+    "coding-general": [
+      "代码",
+      "编程",
+      "脚本",
+      "开发",
+      "项目",
+      "结构",
+      "机器人",
+      "插件",
+      "README"
+    ],
+    "project-maintenance": [
+      "项目",
+      "仓库",
+      "结构",
+      "README",
+      "目录",
+      "整理",
+      "工程"
+    ],
+    "skill-management": [
+      "技能",
+      "skill",
+      "选择助手",
+      "路由",
+      "安装技能",
+      "技能库"
+    ],
+    "data-visualization": [
+      "图表",
+      "可视化",
+      "仪表盘",
+      "画图",
+      "图形"
+    ],
+    "research-citation": [
+      "引用",
+      "参考文献",
+      "文献综述",
+      "论文评审"
+    ],
+    "knowledge-management": [
+      "知识库",
+      "笔记",
+      "Obsidian",
+      "知识图谱",
+      "vault"
+    ],
+    "browser-automation": [
+      "浏览器",
+      "网页自动化",
+      "爬取",
+      "抓取",
+      "playwright"
+    ],
+    "agent-workflow": [
+      "智能体",
+      "agent",
+      "工作流",
+      "编排",
+      "自动执行"
+    ],
+    "finance-analysis": [
+      "金融",
+      "财务",
+      "估值",
+      "股票",
+      "交易"
+    ],
+    "health-biomedical": [
+      "医学",
+      "临床",
+      "健康",
+      "生物",
+      "药物"
+    ],
+    "legal-compliance": [
+      "法律",
+      "合同",
+      "合规",
+      "政策",
+      "隐私"
+    ],
+    "education-learning": [
+      "教育",
+      "课程",
+      "学习",
+      "教学",
+      "学生"
+    ]
+  },
+  "query_cn_specialty_words": {
+    "skill-router-selection": [
+      "技能选择",
+      "选择助手",
+      "推荐skill",
+      "推荐技能",
+      "路由"
+    ],
+    "skill-authoring-install": [
+      "安装技能",
+      "创建skill",
+      "创建技能",
+      "写skill",
+      "技能安装"
+    ],
+    "skill-self-growth": [
+      "自生长",
+      "自增长",
+      "迭代",
+      "选择记忆",
+      "本机skill"
+    ],
+    "project-structure-readme": [
+      "项目结构",
+      "目录结构",
+      "README",
+      "整理项目",
+      "新建项目"
+    ],
+    "knowledge-obsidian-vault": [
+      "知识库",
+      "Obsidian",
+      "vault",
+      "知识图谱",
+      "笔记"
+    ],
+    "knowledge-ingest-distill": [
+      "蒸馏",
+      "沉淀",
+      "来源笔记",
+      "知识笔记",
+      "每周蒸馏"
+    ],
+    "document-pdf-ocr": [
+      "PDF",
+      "pdf",
+      "OCR",
+      "文字提取",
+      "提取文字"
+    ],
+    "document-docx-latex": [
+      "Word",
+      "docx",
+      "LaTeX",
+      "文档"
+    ],
+    "slides-pptx-deck": [
+      "PPT",
+      "pptx",
+      "幻灯片",
+      "演示文稿"
+    ],
+    "spreadsheet-excel-csv": [
+      "Excel",
+      "表格",
+      "csv",
+      "xlsx"
+    ],
+    "devops-ci-release": [
+      "GitHub Actions",
+      "CI",
+      "发布",
+      "release",
+      "部署"
+    ],
+    "git-repo-maintenance": [
+      "提交",
+      "仓库",
+      "分支",
+      "PR",
+      "版本"
+    ],
+    "testing-unit-debug": [
+      "测试",
+      "调试",
+      "报错",
+      "修复",
+      "诊断"
+    ],
+    "frontend-style-ui": [
+      "界面",
+      "UI",
+      "样式",
+      "布局",
+      "美化"
+    ],
+    "backend-api-design": [
+      "接口",
+      "后端",
+      "API",
+      "webhook"
+    ],
+    "backend-database": [
+      "数据库",
+      "SQL",
+      "表结构",
+      "迁移"
+    ],
+    "data-visual-chart": [
+      "图表",
+      "可视化",
+      "仪表盘",
+      "画图"
+    ],
+    "research-literature-review": [
+      "文献综述",
+      "论文评审",
+      "引用",
+      "参考文献"
+    ],
+    "visual-image-design": [
+      "图片",
+      "海报",
+      "封面",
+      "logo"
+    ],
+    "browser-scraping-crawl": [
+      "爬取",
+      "抓取",
+      "浏览器自动化",
+      "网页自动化"
+    ]
   },
   "query_cn_task_words": {
-    "generate": ["\u751f\u6210", "\u521b\u5efa", "\u642d\u5efa", "\u5236\u4f5c"],
-    "review": ["\u8bc4\u5ba1", "\u5ba1\u67e5", "\u68c0\u67e5", "\u770b\u770b"],
-    "test-debug": ["\u6d4b\u8bd5", "\u8c03\u8bd5", "\u4fee\u590d", "\u62a5\u9519"],
-    "plan": ["\u65b9\u6848", "\u8ba1\u5212", "\u89c4\u5212", "\u8bbe\u8ba1", "\u6574\u7406", "\u7ed3\u6784"],
-    "transform": ["\u8f6c\u6362", "\u683c\u5f0f\u5316", "\u6539\u5199", "\u91cd\u6784"],
-    "analyze": ["\u5206\u6790", "\u8bca\u65ad", "\u7814\u7a76"],
-    "publish": ["\u53d1\u5e03", "\u63a8\u9001", "\u4e0a\u7ebf"],
-    "extract": ["\u63d0\u53d6", "\u89e3\u6790", "\u6293\u53d6"],
-    "summarize": ["\u603b\u7ed3", "\u6458\u8981", "\u6982\u62ec"],
-    "workflow": ["\u6d41\u7a0b", "\u673a\u5236"]
+    "generate": [
+      "生成",
+      "创建",
+      "搭建",
+      "制作",
+      "做",
+      "实现",
+      "开发"
+    ],
+    "review": [
+      "评审",
+      "审查",
+      "检查",
+      "看看"
+    ],
+    "test-debug": [
+      "测试",
+      "调试",
+      "修复",
+      "报错"
+    ],
+    "plan": [
+      "方案",
+      "计划",
+      "规划",
+      "设计",
+      "整理",
+      "结构"
+    ],
+    "transform": [
+      "转换",
+      "格式化",
+      "改写",
+      "重构"
+    ],
+    "analyze": [
+      "分析",
+      "诊断",
+      "研究"
+    ],
+    "publish": [
+      "发布",
+      "推送",
+      "上线"
+    ],
+    "extract": [
+      "提取",
+      "解析",
+      "抓取"
+    ],
+    "summarize": [
+      "总结",
+      "摘要",
+      "概括"
+    ],
+    "workflow": [
+      "流程",
+      "机制"
+    ]
   }
 }
