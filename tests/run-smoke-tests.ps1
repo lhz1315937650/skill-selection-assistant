@@ -120,7 +120,41 @@ try {
   $autoIndexDir = Join-Path $outputRoot "auto-index"
   $autoRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $autoIndexDir -SkillsRoot $skillRoot | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath (Join-Path $autoIndexDir "route-summary.json")) "recommend-skills.ps1 should auto-scan when index is missing"
+  Assert-True ($autoRecommendation.index.refreshed -eq $true) "first-use recommendation should report that the local index was generated"
+  Assert-True ($autoRecommendation.index.refresh_reason -eq "index_missing") "first-use recommendation should expose the index refresh reason"
   Assert-True ($autoRecommendation.route.category -eq "specialty=frontend-style-ui|task=generate") "auto-scan recommendation should infer adaptive frontend route"
+
+  $freshnessRoot = Join-Path $outputRoot "freshness-skills"
+  $freshnessIndexDir = Join-Path $outputRoot "freshness-index"
+  Copy-Item -LiteralPath $skillRoot -Destination $freshnessRoot -Recurse -Force
+  & $scanScript -SkillsRoot $freshnessRoot -OutputDir $freshnessIndexDir | Out-Null
+  $beforeRefresh = Read-Json -Path (Join-Path $freshnessIndexDir "skills-index.json")
+  $newSkillDir = Join-Path $freshnessRoot "portable-kubernetes-deployer"
+  New-Item -ItemType Directory -Force -Path $newSkillDir | Out-Null
+  Set-Content -LiteralPath (Join-Path $newSkillDir "SKILL.md") -Encoding UTF8 -Value @(
+    "---",
+    "name: portable-kubernetes-deployer",
+    "description: Deploy Kubernetes applications and maintain container release workflows.",
+    "---",
+    "",
+    "# Portable Kubernetes Deployer"
+  )
+  $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot | Out-String | ConvertFrom-Json)
+  $afterRefresh = Read-Json -Path (Join-Path $freshnessIndexDir "skills-index.json")
+  Assert-True ($refreshedRecommendation.index.refreshed -eq $true) "recommendation should refresh when the installing user's local skill library changes"
+  Assert-True ($refreshedRecommendation.index.refresh_reason -eq "local_skill_library_changed") "stale-index refresh should expose the local-library change reason"
+  Assert-True ([int]$afterRefresh.raw_total -eq ([int]$beforeRefresh.raw_total + 1)) "refresh should classify a newly installed local skill"
+  $newIndexedSkill = @($afterRefresh.skills | Where-Object { $_.name -eq "portable-kubernetes-deployer" })[0]
+  Assert-True ($newIndexedSkill.relative_path -eq "portable-kubernetes-deployer") "scanner should generate a root-relative skill path even when Windows supplies an 8.3 short parent path"
+  Assert-True (@($refreshedRecommendation.selection.candidates | Where-Object { $_.name -eq "portable-kubernetes-deployer" }).Count -eq 1) "recommendations should include a newly installed matching skill after refresh"
+  $installedSkillPaths = @(
+    Get-ChildItem -LiteralPath $freshnessRoot -Filter "SKILL.md" -Recurse -Force -File |
+      ForEach-Object { $_.FullName }
+  )
+  foreach ($candidate in @($refreshedRecommendation.selection.candidates)) {
+    Assert-True (Test-Path -LiteralPath $candidate.skill_md) "every recommendation should point to an installed SKILL.md"
+    Assert-True ($installedSkillPaths -contains [string]$candidate.skill_md) "recommendations should come only from the scanned installing-user skills root"
+  }
 
   Assert-True (Test-Path -LiteralPath $memoryScript) "record-selection-memory.ps1 should exist"
   $memoryResult = (& $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType "domain_detail" -Category "frontend-web" -IndexDir $indexDir | Out-String | ConvertFrom-Json)

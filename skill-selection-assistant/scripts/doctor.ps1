@@ -11,17 +11,17 @@ function Resolve-SkillsRoot {
   param([string]$ExplicitRoot)
 
   if ($ExplicitRoot -and (Test-Path -LiteralPath $ExplicitRoot)) {
-    return (Resolve-Path -LiteralPath $ExplicitRoot).Path
+    return (Get-Item -LiteralPath $ExplicitRoot).FullName
   }
   if ($env:CODEX_HOME) {
     $candidate = Join-Path $env:CODEX_HOME "skills"
     if (Test-Path -LiteralPath $candidate) {
-      return (Resolve-Path -LiteralPath $candidate).Path
+      return (Get-Item -LiteralPath $candidate).FullName
     }
   }
   $homeCandidate = Join-Path $HOME ".codex\skills"
   if (Test-Path -LiteralPath $homeCandidate) {
-    return (Resolve-Path -LiteralPath $homeCandidate).Path
+    return (Get-Item -LiteralPath $homeCandidate).FullName
   }
   return ""
 }

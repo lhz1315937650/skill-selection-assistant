@@ -22,6 +22,65 @@ $inferScript = Join-Path $PSScriptRoot "infer-route.ps1"
 $selectScript = Join-Path $PSScriptRoot "select-route-candidates.ps1"
 $scanScript = Join-Path $PSScriptRoot "scan-local-skills.ps1"
 
+function Get-ResolvedPathOrEmpty {
+  param([string]$Path)
+  if ([string]::IsNullOrWhiteSpace($Path) -or (-not (Test-Path -LiteralPath $Path))) {
+    return ""
+  }
+  return (Get-Item -LiteralPath $Path).FullName
+}
+
+function Test-LocalIndexStale {
+  param(
+    [string]$ManifestPath,
+    [string]$ExplicitSkillsRoot,
+    [string]$RouterSkillPath
+  )
+
+  if (-not (Test-Path -LiteralPath $ManifestPath)) {
+    return $true
+  }
+
+  try {
+    $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $manifestRoot = Get-ResolvedPathOrEmpty -Path ([string]$manifest.skills_root)
+    $requestedRoot = Get-ResolvedPathOrEmpty -Path $ExplicitSkillsRoot
+    if (-not $manifestRoot) { return $true }
+    if ($ExplicitSkillsRoot -and ((-not $requestedRoot) -or ($requestedRoot -ne $manifestRoot))) {
+      return $true
+    }
+
+    $selfSkillPath = Get-ResolvedPathOrEmpty -Path $RouterSkillPath
+    $currentFiles = @(
+      Get-ChildItem -LiteralPath $manifestRoot -Filter "SKILL.md" -Recurse -Force -File -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName } |
+        Where-Object { (-not $selfSkillPath) -or ($_ -ne $selfSkillPath) } |
+        Sort-Object -Unique
+    )
+    $manifestFiles = @($manifest.files)
+    $indexedFiles = @($manifestFiles | ForEach-Object { [string]$_.skill_md } | Where-Object { $_ } | Sort-Object -Unique)
+    if ($currentFiles.Count -ne $indexedFiles.Count) { return $true }
+    if (@(Compare-Object -ReferenceObject $indexedFiles -DifferenceObject $currentFiles).Count -gt 0) { return $true }
+
+    $manifestByPath = @{}
+    foreach ($entry in $manifestFiles) {
+      if ($entry.skill_md) { $manifestByPath[[string]$entry.skill_md] = $entry }
+    }
+    foreach ($filePath in $currentFiles) {
+      if (-not $manifestByPath.ContainsKey($filePath)) { return $true }
+      $file = Get-Item -LiteralPath $filePath
+      $entry = $manifestByPath[$filePath]
+      if (([int64]$entry.file_length -ne [int64]$file.Length) -or ([int64]$entry.last_write_ticks -ne [int64]$file.LastWriteTime.Ticks)) {
+        return $true
+      }
+    }
+    return $false
+  }
+  catch {
+    return $true
+  }
+}
+
 function Get-FirstRouteInfo {
   param([object]$Summary, [string]$RouteType, [string]$Category)
 
@@ -69,9 +128,21 @@ if (-not (Test-Path -LiteralPath $selectScript)) {
 }
 
 $summaryPath = Join-Path $IndexDir "route-summary.json"
-if (-not (Test-Path -LiteralPath $summaryPath)) {
+$manifestPath = Join-Path $IndexDir "manifest.json"
+$routerSkillPath = Join-Path (Split-Path -Parent $PSScriptRoot) "SKILL.md"
+$indexRefreshReason = ""
+$needsScan = (-not (Test-Path -LiteralPath $summaryPath))
+if ($needsScan) {
+  $indexRefreshReason = "index_missing"
+}
+elseif (Test-LocalIndexStale -ManifestPath $manifestPath -ExplicitSkillsRoot $SkillsRoot -RouterSkillPath $routerSkillPath) {
+  $needsScan = $true
+  $indexRefreshReason = "local_skill_library_changed"
+}
+
+if ($needsScan) {
   if (-not (Test-Path -LiteralPath $scanScript)) {
-    throw "Route summary not found and scanner is missing: $summaryPath"
+    throw "The local skill index is missing or stale and the scanner is unavailable: $scanScript"
   }
   if ($SkillsRoot) {
     & $scanScript -SkillsRoot $SkillsRoot -OutputDir $IndexDir | Out-Null
@@ -79,6 +150,10 @@ if (-not (Test-Path -LiteralPath $summaryPath)) {
   else {
     & $scanScript -OutputDir $IndexDir | Out-Null
   }
+}
+
+if (-not (Test-Path -LiteralPath $summaryPath)) {
+  throw "Route summary was not generated: $summaryPath"
 }
 
 $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -135,6 +210,12 @@ if (-not $route.available) {
   if (-not $fallback) {
     [pscustomobject]@{
       query = $Query
+      index = [pscustomobject]@{
+        refreshed = (-not [string]::IsNullOrWhiteSpace($indexRefreshReason))
+        refresh_reason = $indexRefreshReason
+        skills_root = $summary.skills_root
+        scope = $summary.index_scope
+      }
       route = $originalRoute
       selection = [pscustomobject]@{
         source_file = ""
@@ -188,6 +269,12 @@ else {
 
 [pscustomobject]@{
   query = $Query
+  index = [pscustomobject]@{
+    refreshed = (-not [string]::IsNullOrWhiteSpace($indexRefreshReason))
+    refresh_reason = $indexRefreshReason
+    skills_root = $summary.skills_root
+    scope = $summary.index_scope
+  }
   route = [pscustomobject]@{
     route_type = $route.route_type
     category = $route.category

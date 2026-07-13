@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- added a lightweight manifest freshness check before recommendation so newly installed, removed, or modified local skills trigger automatic reclassification
+- exposed index refresh status and reason in recommendation output
+- extended smoke tests to verify that recommendations come only from the installing user's current local skills root
+- normalized Windows skills-root paths before deriving relative skill paths, including environments that expose an 8.3 short parent path
+
 ## v1.6.0 - 2026-06-08
 
 - added adaptive route leaves so large local skill buckets can be narrowed by `specialty + task_type` instead of relying on a fixed-depth category tree

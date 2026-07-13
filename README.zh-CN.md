@@ -58,6 +58,8 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 
 首次扫描后，安装器会尽量生成 `.skill-index/DETAILED_CLASSIFICATION.md`、`.skill-index/detailed-classification.json` 和 `.skill-index/domain-task-matrix.csv`，方便用户直接查看本机 skill 的详细分类分布。
 
+每次推荐前，路由器都会根据 manifest 做一次轻量的新鲜度检查：只比较本机 `SKILL.md` 的路径、大小和修改时间，不会重新读取全部正文。如果安装者新增、删除或修改了 skill，路由器会先重建本机分类索引，再给出推荐，确保候选始终来自这台电脑当前实际安装的 skills。
+
 如果使用 Python 安装器，更新时使用 `--force`；如果当前环境还没有 PowerShell/pwsh，可以先用 `--skip-scan` 只完成复制安装：
 
 ```bash
