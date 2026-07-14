@@ -52,6 +52,31 @@ specialty=frontend-style-ui|task=generate
 
 At recommendation time, the assistant chooses the smallest reliable matching route and reads only that route's shortlist. This reduces token use and avoids scanning a large local skill library for every request.
 
+## Exhaustive Hospital-Style Routing
+
+For very large libraries, the optional deep index reads every installed `SKILL.md` in full once and builds an adaptive reception-desk hierarchy:
+
+```text
+reception -> primary domain -> detailed domain -> specialty -> task -> technology -> output -> setup -> skill
+```
+
+Each skill keeps multiple domain, specialty, task, output, and technology labels. The hierarchy uses one canonical path for low-token traversal, automatically skips single-child levels, and stops when the remaining candidate pool is at or below the configured target. If semantically identical connector libraries still form a large leaf, stable catalog shards guarantee that the final pool stays small.
+
+Run this command from the installed router skill directory when you explicitly want a full audit or deep rebuild:
+
+```powershell
+python scripts/deep-classify-skills.py --leaf-target 24
+```
+
+Then traverse one category at a time:
+
+```powershell
+python scripts/deep-route.py --query "build an Anime.js frontend animation"
+python scripts/deep-route.py --query "build an Anime.js frontend animation" --path "primary_domain=coding|domain_detail=frontend-web"
+```
+
+The generated `.skill-index/deep/` directory belongs only to the installing user. It contains the local detailed catalog, hierarchy, evidence, and routing files and must never be committed or shipped in a release. Normal routing exposes only the current branches or a small final shortlist; it does not load the full catalog into model context.
+
 ## Important Portability Rule
 
 This repository is meant to be installed by different users in different Codex environments.

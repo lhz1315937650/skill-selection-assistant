@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- added an exhaustive full-body classifier that annotates every installed `SKILL.md` with multiple domain, specialty, task, output, technology, setup, evidence, and duplicate-version fields
+- added hospital-style interactive routing from broad reception categories to a final candidate pool of at most the configured leaf target, with adaptive catalog shards for semantically identical large connector sets
+- added Chinese-aware category scoring, descendant-name routing for provider-specific requests, and same-name variant merging in the final shortlist
+- added atomic deep-index publishing and a hierarchy-only reuse mode so interrupted or structural rebuilds do not corrupt the last usable local index
 - added a lightweight manifest freshness check before recommendation so newly installed, removed, or modified local skills trigger automatic reclassification
 - exposed index refresh status and reason in recommendation output
 - extended smoke tests to verify that recommendations come only from the installing user's current local skills root

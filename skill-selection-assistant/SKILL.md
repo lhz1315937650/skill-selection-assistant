@@ -248,6 +248,8 @@ The generated index is a recommendation view, not a destructive filesystem opera
 
 Do not read every local skill before recommendation. Always use a route-first workflow:
 
+When `.skill-index/deep/metadata.json` exists and is fresh, use the hospital-style deep router before the compact legacy recommender. It narrows one classification level at a time and avoids loading the full skill catalog into model context.
+
 1. Prefer running `scripts/recommend-skills.ps1` with the user's request; it performs route inference and candidate selection in one compact step.
 2. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
 3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
@@ -263,6 +265,42 @@ Selector command pattern:
 powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web
+```
+
+## Hospital-Style Deep Routing
+
+The exhaustive deep index models selection as:
+
+`总前台 → 一级领域 → 二级领域 → 专科 → 任务类型 → 技术栈 → 输出类型 → 环境要求 → skill`
+
+The stored hierarchy may contain all these levels, but the interactive route is adaptive. Skip a level automatically when it has only one branch, and stop descending as soon as the remaining candidate pool is at or below the configured `leaf_target`. Each skill also keeps multiple cross-cutting labels for search and auditing; its primary route is only the canonical path used for low-token traversal.
+
+Build or refresh the exhaustive index after skills are installed, removed, renamed, or materially edited, or when the user explicitly requests a full audit:
+
+```powershell
+python scripts/deep-classify-skills.py --leaf-target 24
+```
+
+This builder must read every discovered `SKILL.md` in full, preserve an audit record for every installed path, assign multiple domain/specialty/task/output/technology tags, and publish the result atomically under `.skill-index/deep/`. It must never copy or modify the indexed skills.
+
+For a new request, start at the total reception desk:
+
+```powershell
+python scripts/deep-route.py --query "<user request>"
+```
+
+Follow the returned mode:
+
+1. For `choose_category`, present only the returned branches and ask the user to choose one. Then call the router again with that branch's exact `path`.
+2. Continue one level at a time. Do not read candidate skill files during category routing.
+3. For `choose_skill`, present the small final shortlist and ask which skill to activate.
+4. Read the chosen `SKILL.md` completely only after the user chooses it.
+5. Never load `DETAILED_SKILL_CATALOG.md`, `skills-deep-index.ndjson`, or the complete hierarchy into model context during ordinary selection. Those files are for local scripts and explicit audits only.
+
+Path continuation pattern:
+
+```powershell
+python scripts/deep-route.py --query "<user request>" --path "primary_domain=coding|domain_detail=frontend-web"
 ```
 
 If multiple categories are plausible, prefer the narrowest high-confidence route that still matches the request. The hierarchy is adaptive, not fixed: use `primary_domain` for broad building-level triage, `domain_detail` for department-level triage, `specialty` for concrete clinics, and `adaptive_leaf` routes such as `specialty=<name>|task=<task>` when they reduce token use.

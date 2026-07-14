@@ -24,6 +24,8 @@ $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recomm
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
 $summarizeScript = Join-Path $repoRoot "skill-selection-assistant\scripts\summarize-index.py"
+$deepClassifyScript = Join-Path $repoRoot "skill-selection-assistant\scripts\deep-classify-skills.py"
+$deepRouteScript = Join-Path $repoRoot "skill-selection-assistant\scripts\deep-route.py"
 $installScript = Join-Path $repoRoot "scripts\install-skill.ps1"
 $pythonInstallScript = Join-Path $repoRoot "scripts\install-skill.py"
 $cleanScript = Join-Path $repoRoot "scripts\clean-local-artifacts.ps1"
@@ -56,9 +58,31 @@ try {
   Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
   Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
   Assert-True ($manifest.cache_file -eq "parsed-skills-cache.ndjson") "manifest should point to NDJSON parse cache"
-  Assert-True ($summary.rules_schema_version -eq "1.5") "route summary should expose shared rules schema"
+  Assert-True ($summary.rules_schema_version -eq "1.6") "route summary should expose shared rules schema"
   Assert-True ($summary.output_schema_version -eq "1.6.0") "route summary should expose adaptive route schema"
   Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
+
+  Assert-True (Test-Path -LiteralPath $deepClassifyScript) "deep-classify-skills.py should exist"
+  Assert-True (Test-Path -LiteralPath $deepRouteScript) "deep-route.py should exist"
+  & python $deepClassifyScript --skills-root $skillRoot --skill-dir (Join-Path $repoRoot "skill-selection-assistant") --index-dir $indexDir --leaf-target 3 | Out-Null
+  $deepMetadata = Read-Json -Path (Join-Path $indexDir "deep\metadata.json")
+  Assert-True ([int]$deepMetadata.raw_files -eq 11) "deep classifier should read every fixture SKILL.md"
+  Assert-True ([int]$deepMetadata.classified_files -eq 11) "deep classifier should classify every fixture SKILL.md"
+  Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
+  Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
+
+  $deepPath = ""
+  $deepResult = $null
+  for ($deepStep = 0; $deepStep -lt 12; $deepStep++) {
+    $deepArgs = @($deepRouteScript, "--query", "build a beautiful frontend UI", "--index-dir", $indexDir, "--limit", "12")
+    if ($deepPath) { $deepArgs += @("--path", $deepPath) }
+    $deepResult = (& python @deepArgs | Out-String | ConvertFrom-Json)
+    if ($deepResult.mode -eq "choose_skill") { break }
+    $deepPath = [string]$deepResult.branches[0].path
+  }
+  Assert-True ($deepResult.mode -eq "choose_skill") "deep router should reach a final skill shortlist"
+  Assert-True ([int]$deepResult.content_variant_pool -le 3) "deep router should respect the configured leaf target"
+  Assert-True (@($deepResult.candidates.name) -contains "frontend-design") "deep router should retain the matching frontend skill"
 
   $duplicateVariants = @($index.skills | Where-Object { $_.canonical_name -eq "duplicate-tool" })
   Assert-True ($duplicateVariants.Count -eq 2) "duplicate-tool should have two content variants"
@@ -225,6 +249,10 @@ try {
     Assert-True ($doctorEntries.Count -eq 1) "package zip should include doctor.ps1"
     $summarizeEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*summarize-index.py" })
     Assert-True ($summarizeEntries.Count -eq 1) "package zip should include summarize-index.py"
+    $deepClassifyEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*deep-classify-skills.py" })
+    Assert-True ($deepClassifyEntries.Count -eq 1) "package zip should include deep-classify-skills.py"
+    $deepRouteEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*deep-route.py" })
+    Assert-True ($deepRouteEntries.Count -eq 1) "package zip should include deep-route.py"
   }
   finally {
     $archive.Dispose()

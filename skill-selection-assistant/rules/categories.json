@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.5",
+  "schema_version": "1.6",
   "domain_detail_rules": {
     "academic-research": "academic|paper|literature|citation|arxiv|research|scholar|thesis|abstract|methodology|empirical|experiment",
     "writing-editing": "writing|writer|article|blog|copy|proofread|polish|tone|grammar|humanizer|story|outline",
@@ -35,11 +35,16 @@
   "specialty_rules": {
     "frontend-react-vue": "react|vue|component|spa|frontend component|jsx|tsx",
     "frontend-style-ui": "ui|ux|css|tailwind|responsive|layout|design system|interface|visual style",
+    "frontend-motion-animation": "animation|animate|motion|transition|timeline|stagger|anime\\.js|waapi|动画|动效|转场",
+    "frontend-page-app": "landing page|web page|website|homepage|next.js|single page|responsive page|frontend app|web app",
+    "frontend-component-system": "component library|design system|shadcn|radix|storybook|react component|vue component|ui component",
+    "frontend-a11y-review": "accessibility|a11y|aria|contrast|keyboard navigation|ui audit|style audit|tailwind audit",
     "frontend-browser-mcp": "browser|playwright|selenium|web automation|mcp browser|page automation",
     "backend-api-design": "api|rest|graphql|endpoint|webhook|sdk|backend",
     "backend-database": "database|sql|postgres|mysql|sqlite|mongodb|schema|orm|migration",
     "backend-server-runtime": "server|node|express|fastapi|django|flask|service|microservice",
     "devops-ci-release": "github actions|actions|\\bci\\b|ci/cd|release|deploy|pipeline|workflow yaml",
+    "devops-github-actions": "github actions|actions workflow|workflow yaml|\\.github/workflows|release workflow|ci workflow",
     "devops-containers": "docker|kubernetes|container|compose|helm|cluster",
     "git-repo-maintenance": "\\bgit\\b|git repo|github repo|commit|branch|pull request|\\bpr\\b|changelog|version control",
     "testing-unit-debug": "unit test|integration test|pytest|jest|debug|bug|fix|diagnose|troubleshoot",
@@ -48,10 +53,13 @@
     "skill-router-selection": "skill-selection|skill router|skill-routing|recommend skill|select skill|技能选择|选择助手",
     "skill-authoring-install": "skill creator|skill-creator|skill installer|skill-installer|write a skill|create skill|install skill",
     "skill-self-growth": "self-growth|self growing|self-growing|自生长|自增长|selection memory|route summary|skill index",
+    "skill-router-maintenance": "recommend-skills|infer-route|select-route|scan-local-skills|selection memory|route summary|skill index|token usage|shortlist",
     "project-structure-readme": "project structure|workspace|readme|onboarding|folder structure|directory|cleanup",
     "knowledge-obsidian-vault": "obsidian|vault|zettelkasten|knowledge base|knowledge graph|wiki|notes",
     "knowledge-ingest-distill": "ingest|distill|summarize notes|source note|knowledge note|weekly distill|蒸馏",
     "document-pdf-ocr": "pdf|ocr|text extraction|extract text|parse pdf",
+    "document-pdf-extract": "extract text|text extraction|extract tables|pdf table|pdf parsing|parse pdf|pdf extraction|ocr",
+    "document-pdf-reading-notes": "reading notes|paper notes|read pdf|summarize pdf|academic pdf|split pdf|pdf qa|paper reading",
     "document-docx-latex": "docx|word|latex|document|forms",
     "slides-pptx-deck": "pptx|ppt|slide|deck|presentation",
     "spreadsheet-excel-csv": "excel|xlsx|spreadsheet|csv|table",
@@ -63,9 +71,11 @@
     "research-methodology": "methodology|experiment|empirical|ablation|replication|thesis",
     "writing-polish-article": "writing|article|blog|copy|proofread|polish|tone|grammar|humanizer",
     "translation-bilingual": "translate|translation|localization|bilingual|language",
+    "translation-polish-localize": "translate and polish|translation polish|localize|bilingual polish|academic translation|translation refinement",
     "visual-image-design": "image|poster|logo|cover|infographic|figma|canvas|visual",
     "media-video-audio": "video|audio|youtube|transcript|subtitle|podcast",
     "publishing-social-content": "publish|post|wechat|weibo|xhs|twitter|newsletter|social",
+    "publishing-xhs-copy": "xhs|xiaohongshu|little red book|小红书|种草|社媒文案|小红书文案",
     "business-product-prd": "product|prd|roadmap|strategy|market|customer|sales",
     "finance-valuation-trading": "finance|financial|valuation|dcf|stock|trading|accounting|portfolio",
     "health-clinical-biomed": "biomedical|clinical|medical|health|fhir|patient|trial|pharma|single-cell",
@@ -190,19 +200,31 @@
       "公众号",
       "小红书",
       "微博",
-      "推文"
+      "推文",
+      "种草",
+      "短视频文案",
+      "社媒",
+      "内容发布"
     ],
     "writing-editing": [
       "文章",
       "写作",
       "润色",
       "改写",
-      "文案"
+      "文案",
+      "产品介绍",
+      "介绍文案",
+      "营销文案",
+      "内容创作"
     ],
     "translation-localization": [
       "翻译",
       "本地化",
-      "双语"
+      "双语",
+      "英译中",
+      "中译英",
+      "中英文",
+      "英文翻译"
     ],
     "security-risk": [
       "安全",
@@ -274,7 +296,9 @@
       "可视化",
       "仪表盘",
       "画图",
-      "图形"
+      "图形",
+      "生成图表",
+      "分析图表"
     ],
     "research-citation": [
       "引用",
@@ -354,6 +378,13 @@
       "选择记忆",
       "本机skill"
     ],
+    "skill-router-maintenance": [
+      "推荐排序",
+      "减少token",
+      "本地skill优化",
+      "路由优化",
+      "选择质量"
+    ],
     "project-structure-readme": [
       "项目结构",
       "目录结构",
@@ -382,6 +413,18 @@
       "文字提取",
       "提取文字"
     ],
+    "document-pdf-extract": [
+      "PDF提取",
+      "提取PDF",
+      "提取表格",
+      "文字和表格"
+    ],
+    "document-pdf-reading-notes": [
+      "PDF阅读笔记",
+      "论文PDF",
+      "阅读笔记",
+      "知识库笔记"
+    ],
     "document-docx-latex": [
       "Word",
       "docx",
@@ -407,6 +450,12 @@
       "release",
       "部署"
     ],
+    "devops-github-actions": [
+      "GitHub Actions",
+      "workflow",
+      "CI workflow",
+      "release workflow"
+    ],
     "git-repo-maintenance": [
       "提交",
       "仓库",
@@ -421,12 +470,46 @@
       "修复",
       "诊断"
     ],
+    "frontend-motion-animation": [
+      "动画",
+      "动效",
+      "转场",
+      "交互动画",
+      "时间线",
+      "Anime.js"
+    ],
+    "automation-connectors": [
+      "自动化",
+      "连接器",
+      "集成",
+      "工作流",
+      "消息自动化"
+    ],
     "frontend-style-ui": [
       "界面",
       "UI",
       "样式",
       "布局",
       "美化"
+    ],
+    "frontend-page-app": [
+      "前端页面",
+      "网页",
+      "落地页",
+      "响应式页面",
+      "网站页面"
+    ],
+    "frontend-component-system": [
+      "组件",
+      "组件库",
+      "设计系统",
+      "shadcn"
+    ],
+    "frontend-a11y-review": [
+      "可访问性",
+      "无障碍",
+      "UI审查",
+      "样式审查"
     ],
     "backend-api-design": [
       "接口",
@@ -444,7 +527,10 @@
       "图表",
       "可视化",
       "仪表盘",
-      "画图"
+      "画图",
+      "生成图表",
+      "Excel图表",
+      "表格图表"
     ],
     "research-literature-review": [
       "文献综述",
@@ -463,6 +549,35 @@
       "抓取",
       "浏览器自动化",
       "网页自动化"
+    ],
+    "publishing-social-content": [
+      "小红书文案",
+      "种草文案",
+      "社媒文案",
+      "公众号文章"
+    ],
+    "publishing-xhs-copy": [
+      "小红书",
+      "小红书文案",
+      "种草",
+      "种草文案"
+    ],
+    "writing-polish-article": [
+      "产品介绍文案",
+      "营销文案",
+      "润色文案"
+    ],
+    "translation-bilingual": [
+      "英译中",
+      "中译英",
+      "英文摘要翻译",
+      "翻译润色"
+    ],
+    "translation-polish-localize": [
+      "翻译润色",
+      "翻译并润色",
+      "本地化润色",
+      "学术翻译"
     ]
   },
   "query_cn_task_words": {
@@ -473,7 +588,10 @@
       "制作",
       "做",
       "实现",
-      "开发"
+      "开发",
+      "写一篇",
+      "写文案",
+      "生成文案"
     ],
     "review": [
       "评审",
@@ -499,7 +617,9 @@
       "转换",
       "格式化",
       "改写",
-      "重构"
+      "重构",
+      "翻译润色",
+      "翻译并润色"
     ],
     "analyze": [
       "分析",
