@@ -273,7 +273,9 @@ The exhaustive deep index models selection as:
 
 `总前台 → 一级领域 → 二级领域 → 专科 → 任务类型 → 技术栈 → 输出类型 → 环境要求 → skill`
 
-The stored hierarchy may contain all these levels, but the interactive route is adaptive. Skip a level automatically when it has only one branch, and stop descending as soon as the remaining candidate pool is at or below the configured `leaf_target`. Each skill also keeps multiple cross-cutting labels for search and auditing; its primary route is only the canonical path used for low-token traversal.
+The stored hierarchy may contain all these levels, but the interactive route is adaptive. Every skill may belong to multiple domains, specialties, task types, technologies, and output labels. Default selection uses the generated multi-label facet index: each user choice intersects with the prior choices, so a skill can be reached through any appropriate label instead of only its canonical primary route. The canonical hierarchy remains available for audits and legacy compatibility.
+
+Stop asking for deeper categories when the user has not supplied evidence for the next axis. Rank the current local candidate set internally and return only a dynamic compact shortlist. Do not force irrelevant technology, output, setup, or alphabetical choices merely to reduce an internal count. Use catalog shards only for an explicit catalog audit.
 
 Build or refresh the exhaustive index after skills are installed, removed, renamed, or materially edited, or when the user explicitly requests a full audit:
 
@@ -291,11 +293,12 @@ python scripts/deep-route.py --query "<user request>"
 
 Follow the returned mode:
 
-1. For `choose_category`, present only the returned branches and ask the user to choose one. Then call the router again with that branch's exact `path`.
+1. For `choose_category`, present only the dynamically returned branches and ask the user to choose one. Then call the router again with that branch's exact `path`.
 2. Continue one level at a time. Do not read candidate skill files during category routing.
 3. For `choose_skill`, present the small final shortlist and ask which skill to activate.
 4. Read the chosen `SKILL.md` completely only after the user chooses it.
-5. Never load `DETAILED_SKILL_CATALOG.md`, `skills-deep-index.ndjson`, or the complete hierarchy into model context during ordinary selection. Those files are for local scripts and explicit audits only.
+5. In default compact mode, show only the short function summary, matched tags, total tag count, setup level, and variant count. Use `--verbose` only when the user explicitly asks for detailed candidate comparison.
+6. Never load `DETAILED_SKILL_CATALOG.md`, `skills-deep-index.ndjson`, `facets.json`, `route-cards.json`, or the complete hierarchy into model context during ordinary selection. Those files are for local scripts and explicit audits only.
 
 Path continuation pattern:
 

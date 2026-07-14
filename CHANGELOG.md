@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- upgraded deep routing to schema 2.2 with true multi-label facet intersection, allowing one skill to be reached through multiple primary domains, detailed domains, specialties, tasks, technologies, and outputs
+- added structured function profiles and a much more detailed human-readable catalog while keeping those audit fields out of ordinary recommendation context
+- added compact route cards, dynamic branch windows, compact matched-tag candidate output, non-reducing facet skipping, and early stopping when the request has no evidence for another classification axis
+- kept alphabetical catalog shards as an explicit audit option instead of forcing irrelevant category choices during normal low-token selection
 - added an exhaustive full-body classifier that annotates every installed `SKILL.md` with multiple domain, specialty, task, output, technology, setup, evidence, and duplicate-version fields
 - added hospital-style interactive routing from broad reception categories to a final candidate pool of at most the configured leaf target, with adaptive catalog shards for semantically identical large connector sets
 - added Chinese-aware category scoring, descendant-name routing for provider-specific requests, and same-name variant merging in the final shortlist

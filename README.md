@@ -60,7 +60,7 @@ For very large libraries, the optional deep index reads every installed `SKILL.m
 reception -> primary domain -> detailed domain -> specialty -> task -> technology -> output -> setup -> skill
 ```
 
-Each skill keeps multiple domain, specialty, task, output, and technology labels. The hierarchy uses one canonical path for low-token traversal, automatically skips single-child levels, and stops when the remaining candidate pool is at or below the configured target. If semantically identical connector libraries still form a large leaf, stable catalog shards guarantee that the final pool stays small.
+Each skill keeps multiple primary domains, detailed domains, specialties, task types, outputs, and technology labels. Default routing uses a local inverted facet index: every category choice intersects with earlier choices, so the same skill can be reached through any appropriate label instead of only one canonical path. Strong but non-reducing labels are recognized and skipped automatically. If the request provides no evidence for another axis, routing stops asking questions and ranks the current set locally instead of forcing irrelevant technology, output, setup, or alphabetical choices.
 
 Run this command from the installed router skill directory when you explicitly want a full audit or deep rebuild:
 
@@ -75,7 +75,7 @@ python scripts/deep-route.py --query "build an Anime.js frontend animation"
 python scripts/deep-route.py --query "build an Anime.js frontend animation" --path "primary_domain=coding|domain_detail=frontend-web"
 ```
 
-The generated `.skill-index/deep/` directory belongs only to the installing user. It contains the local detailed catalog, hierarchy, evidence, and routing files and must never be committed or shipped in a release. Normal routing exposes only the current branches or a small final shortlist; it does not load the full catalog into model context.
+The generated `.skill-index/deep/` directory belongs only to the installing user. It contains the detailed catalog, structured function profiles, multi-label `facets.json`, compact `route-cards.json`, hierarchy, and classification evidence and must never be committed or shipped in a release. Normal routing exposes only dynamically selected current branches or a small final shortlist. Candidate summaries are truncated and only matched tags are returned by default; `--verbose` is reserved for explicit detailed comparisons.
 
 ## Important Portability Rule
 

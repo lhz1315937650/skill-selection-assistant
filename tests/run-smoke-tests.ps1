@@ -70,6 +70,11 @@ try {
   Assert-True ([int]$deepMetadata.classified_files -eq 11) "deep classifier should classify every fixture SKILL.md"
   Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
   Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
+  Assert-True ($deepMetadata.schema_version -eq "2.2.0") "deep classifier should expose multi-label facet schema"
+  Assert-True ($deepMetadata.multi_label_facets -eq $true) "deep classifier should enable multi-label facets"
+  Assert-True ($deepMetadata.detailed_function_profiles -eq $true) "deep classifier should generate detailed function profiles"
+  Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\facets.json")) "deep classifier should generate facet index"
+  Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\route-cards.json")) "deep classifier should generate compact route cards"
 
   $deepPath = ""
   $deepResult = $null
@@ -81,8 +86,11 @@ try {
     $deepPath = [string]$deepResult.branches[0].path
   }
   Assert-True ($deepResult.mode -eq "choose_skill") "deep router should reach a final skill shortlist"
+  Assert-True ($deepResult.selection_model -eq "multi_label_facet_intersection") "deep router should use multi-label facet intersection"
   Assert-True ([int]$deepResult.content_variant_pool -le 3) "deep router should respect the configured leaf target"
   Assert-True (@($deepResult.candidates.name) -contains "frontend-design") "deep router should retain the matching frontend skill"
+  Assert-True ($deepResult.candidates[0].PSObject.Properties.Name -contains "matched_tags") "compact deep candidates should expose matched tags"
+  Assert-True (-not ($deepResult.candidates[0].PSObject.Properties.Name -contains "capability_tags")) "compact deep candidates should omit the full tag list"
 
   $duplicateVariants = @($index.skills | Where-Object { $_.canonical_name -eq "duplicate-tool" })
   Assert-True ($duplicateVariants.Count -eq 2) "duplicate-tool should have two content variants"

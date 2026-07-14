@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2.1.0"
+SCHEMA_VERSION = "2.2.0"
 DEFAULT_LEAF_TARGET = 24
 MAX_TAGS = {
     "domain_detail": 6,
@@ -307,10 +307,12 @@ def classify_document(
         tech = ["general"]
 
     primary_map = rules.get("primary_map", {})
-    primary_domain = str(primary_map.get(detail[0]) or "general")
+    primary_domains = list(dict.fromkeys(str(primary_map.get(value) or "general") for value in detail))
+    primary_domain = primary_domains[0]
     setup_level = infer_setup(f"{description}\n{headings}\n{body}")
     route = {
         "primary_domain": primary_domain,
+        "primary_domains": primary_domains,
         "domain_detail": detail[0],
         "specialty": specialty[0],
         "task_type": tasks[0],
@@ -331,8 +333,10 @@ def classify_document(
         "name": name,
         "canonical_name": canonical_name(name),
         "function_summary": description[:600],
+        "function_detail": description[:1500],
         "headings": headings_list,
         "primary_domain": primary_domain,
+        "primary_domains": primary_domains,
         "domain_detail": detail,
         "specialty": specialty,
         "task_type": tasks,
@@ -347,6 +351,17 @@ def classify_document(
             "task_type": task_ev,
             "output_type": output_ev,
             "tech_stack": tech_ev,
+        },
+        "functional_profile": {
+            "purpose": description[:1500],
+            "primary_domains": primary_domains,
+            "domain_labels": detail,
+            "specialty_labels": specialty,
+            "typical_tasks": tasks,
+            "technology_labels": tech,
+            "output_labels": outputs,
+            "setup_requirement": setup_level,
+            "section_outline": headings_list,
         },
         "origin": origin,
         "relative_path": relative,
@@ -400,6 +415,56 @@ def annotate_duplicates(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 LEVELS = ["primary_domain", "domain_detail", "specialty", "task_type", "tech_stack", "output_type", "setup_level"]
+
+
+def facet_values(item: dict[str, Any], level: str) -> list[str]:
+    if level == "primary_domain":
+        return list(item.get("primary_domains") or [item.get("primary_domain") or "general"])
+    if level == "setup_level":
+        return [str(item.get("setup_level") or "none")]
+    values = item.get(level) or []
+    if isinstance(values, str):
+        values = [values]
+    return list(dict.fromkeys(str(value) for value in values if value)) or ["general"]
+
+
+def build_facets(items: list[dict[str, Any]]) -> dict[str, Any]:
+    facets: dict[str, dict[str, list[str]]] = {level: defaultdict(list) for level in LEVELS}
+    for item in items:
+        for level in LEVELS:
+            for value in facet_values(item, level):
+                facets[level][value].append(item["skill_id"])
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "selection_model": "multi-label-facet-intersection",
+        "levels": LEVELS,
+        "all_skill_ids": [item["skill_id"] for item in items],
+        "facets": {
+            level: {label: sorted(skill_ids) for label, skill_ids in sorted(labels.items())}
+            for level, labels in facets.items()
+        },
+    }
+
+
+def compact_route_card(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "skill_id": item["skill_id"],
+        "name": item["name"],
+        "canonical_name": item["canonical_name"],
+        "function_summary": item["function_summary"],
+        "primary_domains": item.get("primary_domains") or [item["primary_domain"]],
+        "domain_detail": item["domain_detail"],
+        "specialty": item["specialty"],
+        "task_type": item["task_type"],
+        "tech_stack": item["tech_stack"],
+        "output_type": item["output_type"],
+        "setup_level": item["setup_level"],
+        "capability_tags": item["capability_tags"],
+        "origin": item["origin"],
+        "skill_md": item["skill_md"],
+        "exact_duplicate_count": item["exact_duplicate_count"],
+        "variant_count": item["variant_count"],
+    }
 
 
 def build_tree(items: list[dict[str, Any]]) -> dict[str, Any]:
@@ -507,14 +572,32 @@ def write_hierarchy_markdown(path: Path, tree: dict[str, Any], cards: dict[str, 
 
 
 def write_catalog(path: Path, items: Iterable[dict[str, Any]]) -> None:
-    lines = ["# 全量 Skill 功能标注目录", ""]
+    lines = [
+        "# 全量 Skill 详细功能标注目录",
+        "",
+        "本文件用于人工审计。普通 skill 选择不得把本文件整体载入模型上下文。",
+        "",
+    ]
     for item in items:
         route = " → ".join(item["primary_route"][level] for level in LEVELS)
-        tags = ", ".join(item["capability_tags"])
-        lines.append(
-            f"- **{item['name']}** | `{item['relative_path']}` | 功能: {item['function_summary']} | "
-            f"主路径: {route} | 标签: {tags} | exact={item['exact_duplicate_count']} variants={item['variant_count']}"
-        )
+        lines.extend([
+            f"## {item['name']}",
+            "",
+            f"- 安装位置: `{item['relative_path']}`",
+            f"- 功能说明: {item.get('function_detail') or item['function_summary']}",
+            f"- 主分诊路径: {route}",
+            f"- 一级领域: {', '.join(item.get('primary_domains') or [item['primary_domain']])}",
+            f"- 二级领域标签: {', '.join(item['domain_detail'])}",
+            f"- 专科标签: {', '.join(item['specialty'])}",
+            f"- 任务标签: {', '.join(item['task_type'])}",
+            f"- 技术栈标签: {', '.join(item['tech_stack'])}",
+            f"- 输出标签: {', '.join(item['output_type'])}",
+            f"- 环境要求: {item['setup_level']}",
+            f"- 文档章节: {', '.join(item.get('headings') or []) or '未提供明确章节'}",
+            f"- 重复与版本: exact={item['exact_duplicate_count']}, same-name={item['duplicate_name_count']}, variants={item['variant_count']}",
+            f"- 文件统计: {item['word_count']} words, {item['file_length']} bytes, modified={item['last_write_time']}",
+            "",
+        ])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -573,6 +656,11 @@ def main() -> int:
         reused_generated_at = str(existing_metadata.get("generated_at") or "")
         with (existing_deep / "skills-deep-index.ndjson").open("r", encoding="utf-8-sig") as handle:
             items = [json.loads(line) for line in handle if line.strip()]
+        for item in items:
+            if not item.get("primary_domains"):
+                profile_domains = (item.get("functional_profile") or {}).get("primary_domains") or []
+                route_domains = (item.get("primary_route") or {}).get("primary_domains") or []
+                item["primary_domains"] = list(profile_domains or route_domains or [item.get("primary_domain") or "general"])
         failures = load_json(existing_deep / "failures.json")
         log(f"Reusing {len(items)} fully classified records from {reused_generated_at}")
         files_count = len(items)
@@ -591,6 +679,7 @@ def main() -> int:
 
     representatives = annotate_duplicates(items)
     cards = {item["skill_id"]: item for item in representatives}
+    facets = build_facets(representatives)
     raw_tree = build_tree(representatives)
     adaptive_shards = add_adaptive_catalog_shards(raw_tree, cards, args.leaf_target)
     tree = serialize_tree(raw_tree)
@@ -623,11 +712,17 @@ def main() -> int:
         "full_body_read": True,
         "adaptive_catalog_shards": adaptive_shards,
         "classification_reused_from": reused_generated_at,
+        "multi_label_facets": True,
+        "detailed_function_profiles": True,
     }
     dump_json(temp_dir / "metadata.json", metadata)
     dump_json(temp_dir / "hierarchy.json", tree)
     dump_json(temp_dir / "route-counts.json", dict(sorted(route_counts.items())))
     dump_json(temp_dir / "failures.json", failures)
+    dump_json(temp_dir / "facets.json", facets)
+    dump_json(temp_dir / "route-cards.json", {
+        item["skill_id"]: compact_route_card(item) for item in representatives
+    })
     dump_json(temp_dir / "label-keywords.json", {
         "primary_map": rules.get("primary_map", {}),
         "domain_detail": rules.get("domain_detail_rules", {}),

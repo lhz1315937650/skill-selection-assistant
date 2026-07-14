@@ -5,9 +5,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
+
+
+GENERIC_NAME_ROUTE_TOKENS = {
+    "api", "app", "code", "data", "design", "file", "frontend", "help", "skill",
+    "test", "tool", "web", "workflow", "ci", "css", "html", "js", "md", "ui",
+}
 
 
 def load_json(path: Path) -> Any:
@@ -96,19 +103,39 @@ def branch_score(
     raw_query_tokens: set[str],
     keywords: dict[str, Any],
 ) -> int:
-    haystack = f"{branch.get('name', '')} {branch.get('display_name', '')}".lower()
-    score = sum(12 for token in query_tokens if token in haystack)
-    descendant_names = " ".join(str(value) for value in branch.get("search_terms", [])).lower()
+    score = semantic_label_score(branch, query, query_tokens, keywords)
+    descendant_names = [str(value).lower() for value in branch.get("search_terms", [])]
     if descendant_names:
-        score += sum(160 for token in raw_query_tokens if token in descendant_names)
+        name_parts: set[str] = set()
+        for value in descendant_names:
+            name_parts.update(re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]{2,}", value))
+            name_parts.add(re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value))
+        for token in raw_query_tokens:
+            normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", token.lower())
+            if normalized and normalized not in GENERIC_NAME_ROUTE_TOKENS and normalized in name_parts:
+                score += 160
+    return score
+
+
+def semantic_label_score(
+    branch: dict[str, Any],
+    query: str,
+    query_tokens: set[str],
+    keywords: dict[str, Any],
+) -> int:
+    haystack = f"{branch.get('name', '')} {branch.get('display_name', '')}".lower()
+    score = sum(12 for token in query_tokens if token not in GENERIC_NAME_ROUTE_TOKENS and token in haystack)
     level = str(branch.get("level") or "")
     label = str(branch.get("name") or "")
     score += direct_label_score(level, label, query, keywords)
     if level == "primary_domain":
         primary_map = keywords.get("primary_map", {})
+        detail_scores: list[int] = []
         for detail_label, primary_label in primary_map.items():
             if str(primary_label) == label:
-                score = max(score, direct_label_score("domain_detail", str(detail_label), query, keywords))
+                detail_scores.append(direct_label_score("domain_detail", str(detail_label), query, keywords))
+        if detail_scores:
+            score += max(detail_scores)
     return score
 
 
@@ -119,6 +146,8 @@ def skill_score(card: dict[str, Any], query_tokens: set[str], raw_query_tokens: 
     tags = " ".join(card.get("capability_tags") or []).lower()
     score = 0
     for token in raw_query_tokens:
+        if token in GENERIC_NAME_ROUTE_TOKENS:
+            continue
         if token in name_parts:
             score += 60
         elif len(token) >= 4 and token in name:
@@ -155,6 +184,245 @@ def expand_query_tokens(query: str, keywords: dict[str, Any]) -> set[str]:
     return result
 
 
+def dynamic_window(items: list[dict[str, Any]], limit: int, window: int, minimum: int, score_key: str = "query_score") -> list[dict[str, Any]]:
+    if not items:
+        return []
+    top_score = int(items[0].get(score_key) or 0)
+    if top_score <= 0:
+        return items[: min(limit, max(minimum, 5))]
+    selected = [item for item in items if int(item.get(score_key) or 0) >= top_score - window][:limit]
+    if len(selected) < minimum:
+        selected = items[: min(limit, minimum)]
+    return selected
+
+
+def partition_catalog(skill_ids: set[str], cards: dict[str, dict[str, Any]], leaf_target: int) -> list[list[str]]:
+    ordered = sorted(skill_ids, key=lambda skill_id: (cards[skill_id].get("canonical_name", ""), skill_id))
+    if len(ordered) <= leaf_target:
+        return [ordered]
+    chunk_size = max(leaf_target, math.ceil(len(ordered) / 8))
+    return [ordered[start : start + chunk_size] for start in range(0, len(ordered), chunk_size)]
+
+
+def parse_facet_path(
+    path: str,
+    facets: dict[str, Any],
+    cards: dict[str, dict[str, Any]],
+    leaf_target: int,
+) -> tuple[set[str], dict[str, str], list[tuple[int, int]]]:
+    selected: dict[str, str] = {}
+    shards: list[tuple[int, int]] = []
+    candidate_ids = set(facets.get("all_skill_ids", []))
+    shard_started = False
+    for segment in [value for value in path.split("|") if value]:
+        if "=" not in segment:
+            raise ValueError(f"Invalid path segment: {segment}")
+        level, label = segment.split("=", 1)
+        shard_match = re.fullmatch(r"catalog_shard_(\d+)", level)
+        if shard_match:
+            shard_started = True
+            depth = int(shard_match.group(1))
+            index = int(label)
+            expected_depth = len(shards) + 1
+            if depth != expected_depth:
+                raise ValueError(f"Expected catalog_shard_{expected_depth}, got {level}")
+            groups = partition_catalog(candidate_ids, cards, leaf_target)
+            if index < 1 or index > len(groups):
+                raise KeyError(f"Catalog shard not found: {segment}")
+            candidate_ids = set(groups[index - 1])
+            shards.append((depth, index))
+            continue
+        if shard_started:
+            raise ValueError("Semantic facet segments cannot follow catalog shards")
+        if level in selected:
+            raise ValueError(f"Facet level selected more than once: {level}")
+        label_ids = facets.get("facets", {}).get(level, {}).get(label)
+        if label_ids is None:
+            raise KeyError(f"Facet not found: {segment}")
+        candidate_ids.intersection_update(label_ids)
+        selected[level] = label
+    return candidate_ids, selected, shards
+
+
+def matched_tags(card: dict[str, Any], query_tokens: set[str], selected: dict[str, str]) -> list[str]:
+    result = list(dict.fromkeys(selected.values()))
+    for tag in card.get("capability_tags") or []:
+        lowered = str(tag).lower()
+        parts = {value for value in re.split(r"[-_]+", lowered) if len(value) >= 2}
+        if lowered in query_tokens or parts.intersection(query_tokens):
+            result.append(str(tag))
+    return list(dict.fromkeys(result))[:8]
+
+
+def run_facet_route(
+    args: argparse.Namespace,
+    metadata: dict[str, Any],
+    deep_dir: Path,
+    keywords: dict[str, Any],
+) -> dict[str, Any]:
+    facets = load_json(deep_dir / "facets.json")
+    cards = load_json(deep_dir / "route-cards.json")
+    leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
+    candidate_ids, selected, shards = parse_facet_path(args.path, facets, cards, leaf_target)
+    if not candidate_ids:
+        raise ValueError("The selected multi-label facets have no skills in common")
+
+    raw_query_tokens = tokens(args.query)
+    query_tokens = expand_query_tokens(args.query, keywords)
+    facet_sets = {
+        level: {label: set(skill_ids) for label, skill_ids in labels.items()}
+        for level, labels in facets.get("facets", {}).items()
+    }
+    skipped_levels: list[str] = []
+    branch_level = ""
+    branches: list[dict[str, Any]] = []
+
+    if len(candidate_ids) > leaf_target and not shards:
+        for level in facets.get("levels", []):
+            if level in selected:
+                continue
+            all_level_branches: list[dict[str, Any]] = []
+            for label, label_ids in facet_sets.get(level, {}).items():
+                subset = candidate_ids.intersection(label_ids)
+                if not subset:
+                    continue
+                search_terms = [cards[skill_id].get("canonical_name", "") for skill_id in subset]
+                item = {
+                    "level": level,
+                    "name": label,
+                    "display_name": label,
+                    "count": len(subset),
+                    "search_terms": search_terms,
+                }
+                item["semantic_score"] = semantic_label_score(item, args.query, query_tokens, keywords)
+                item["query_score"] = branch_score(item, args.query, query_tokens, raw_query_tokens, keywords)
+                item["path"] = f"{args.path}|{level}={label}" if args.path else f"{level}={label}"
+                all_level_branches.append(item)
+            full_branches = [item for item in all_level_branches if item["count"] == len(candidate_ids)]
+            level_branches = [item for item in all_level_branches if item["count"] < len(candidate_ids)]
+            best_full = max(full_branches, key=lambda item: item["query_score"], default=None)
+            best_reducing_score = max((item["query_score"] for item in level_branches), default=0)
+            if best_full and best_full["query_score"] > 0 and best_full["query_score"] >= best_reducing_score:
+                skipped_levels.append(f"{level}={best_full['name']} (matched but non-reducing)")
+                continue
+            if level_branches:
+                level_branches.sort(key=lambda item: (
+                    -item["query_score"],
+                    item["count"] if item["semantic_score"] > 0 else -item["count"],
+                    item["name"],
+                ))
+                if level_branches[0]["semantic_score"] <= 0:
+                    skipped_levels.append(f"{level} (no explicit semantic evidence)")
+                    break
+                branch_level = level
+                branches = dynamic_window(level_branches, args.limit, args.branch_score_window, minimum=2)
+                break
+            skipped_levels.append(level)
+
+    if len(candidate_ids) > leaf_target and not branches and (args.catalog_shards or shards):
+        groups = partition_catalog(candidate_ids, cards, leaf_target)
+        depth = len(shards) + 1
+        shard_branches: list[dict[str, Any]] = []
+        for index, group in enumerate(groups, 1):
+            first_name = cards[group[0]].get("canonical_name", "")
+            last_name = cards[group[-1]].get("canonical_name", "")
+            search_terms = [cards[skill_id].get("canonical_name", "") for skill_id in group]
+            group_parts: set[str] = set()
+            for value in search_terms:
+                group_parts.update(re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]{2,}", value.lower()))
+                group_parts.add(re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", value.lower()))
+            query_score = 0
+            for token in raw_query_tokens:
+                normalized = re.sub(r"[^a-z0-9\u4e00-\u9fff]+", "", token.lower())
+                if normalized and normalized not in GENERIC_NAME_ROUTE_TOKENS and normalized in group_parts:
+                    query_score += 160
+            segment = f"catalog_shard_{depth}={index}"
+            shard_branches.append({
+                "level": f"catalog_shard_{depth}",
+                "name": str(index),
+                "display_name": f"名称索引 {first_name} ～ {last_name}",
+                "count": len(group),
+                "query_score": query_score,
+                "path": f"{args.path}|{segment}" if args.path else segment,
+            })
+        shard_branches.sort(key=lambda item: (-item["query_score"], item["name"]))
+        branch_level = f"catalog_shard_{depth}"
+        branches = dynamic_window(shard_branches, args.limit, args.branch_score_window, minimum=2)
+
+    if branches:
+        return {
+            "mode": "choose_category",
+            "selection_model": "multi_label_facet_intersection",
+            "query": args.query,
+            "current": {
+                "candidate_count": len(candidate_ids),
+                "selected_facets": selected,
+                "catalog_shards": [f"catalog_shard_{depth}={index}" for depth, index in shards],
+                "path": args.path,
+            },
+            "auto_skipped_non_reducing_levels": skipped_levels,
+            "next_level": branch_level,
+            "branches": [
+                {key: item[key] for key in ("name", "display_name", "count", "path", "query_score")}
+                for item in branches
+            ],
+            "returned_branches": len(branches),
+            "instruction": "Present only these compact branches. Ask the user to choose one, then continue with its exact path.",
+        }
+
+    ranked = [cards[skill_id] for skill_id in candidate_ids]
+    ranked.sort(key=lambda item: (-skill_score(item, query_tokens, raw_query_tokens), item.get("name", "")))
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in ranked:
+        grouped.setdefault(str(item.get("canonical_name") or item.get("name") or ""), []).append(item)
+    visible = [variants[0] for variants in grouped.values()]
+    scored_visible = [
+        {"card": item, "score": skill_score(item, query_tokens, raw_query_tokens)} for item in visible
+    ]
+    if scored_visible:
+        top_score = scored_visible[0]["score"]
+        if top_score > 0:
+            returned = [item for item in scored_visible if item["score"] >= top_score - args.candidate_score_window][: args.limit]
+        else:
+            returned = scored_visible[: min(args.limit, 5)]
+    else:
+        returned = []
+    result_candidates: list[dict[str, Any]] = []
+    for entry in returned:
+        item = entry["card"]
+        tags = list(item.get("capability_tags") or [])
+        candidate = {
+            "name": item["name"],
+            "function_summary": item.get("function_summary", "") if args.verbose else item.get("function_summary", "")[:220],
+            "matched_tags": matched_tags(item, query_tokens, selected),
+            "tag_count": len(tags),
+            "setup_level": item.get("setup_level", "unknown"),
+            "origin": item.get("origin", "unknown"),
+            "skill_md": item.get("skill_md", ""),
+            "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
+            "score": entry["score"],
+        }
+        if args.verbose:
+            candidate["capability_tags"] = tags
+        result_candidates.append(candidate)
+    return {
+        "mode": "choose_skill",
+        "selection_model": "multi_label_facet_intersection",
+        "query": args.query,
+        "current": {
+            "candidate_count": len(candidate_ids),
+            "selected_facets": selected,
+            "catalog_shards": [f"catalog_shard_{depth}={index}" for depth, index in shards],
+            "path": args.path,
+        },
+        "candidate_pool": len(visible),
+        "content_variant_pool": len(ranked),
+        "returned_candidates": len(result_candidates),
+        "candidates": result_candidates,
+        "instruction": "Present this compact final shortlist and ask which skill to activate. Read only the chosen SKILL.md.",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Walk the deep skill hierarchy one category at a time.")
     parser.add_argument("--query", required=True)
@@ -162,15 +430,24 @@ def main() -> int:
     parser.add_argument("--index-dir", default="")
     parser.add_argument("--limit", type=int, default=8)
     parser.add_argument("--leaf-target", type=int, default=0)
+    parser.add_argument("--branch-score-window", type=int, default=60)
+    parser.add_argument("--candidate-score-window", type=int, default=12)
+    parser.add_argument("--verbose", action="store_true", help="Return full summaries and all tags in the final shortlist.")
+    parser.add_argument("--legacy-hierarchy", action="store_true", help="Use the canonical single-route hierarchy instead of multi-label facets.")
+    parser.add_argument("--catalog-shards", action="store_true", help="Continue into alphabetical catalog shards when semantic facets are exhausted.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else script_dir.parent / ".skill-index"
     deep_dir = index_dir / "deep"
     metadata = load_json(deep_dir / "metadata.json")
-    tree = load_json(deep_dir / "hierarchy.json")
     keyword_path = deep_dir / "label-keywords.json"
     keywords = load_json(keyword_path) if keyword_path.exists() else {}
+    if not args.legacy_hierarchy and (deep_dir / "facets.json").exists() and (deep_dir / "route-cards.json").exists():
+        print(json.dumps(run_facet_route(args, metadata, deep_dir, keywords), ensure_ascii=False, indent=2))
+        return 0
+
+    tree = load_json(deep_dir / "hierarchy.json")
     node = find_node(tree, args.path)
     leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
 
