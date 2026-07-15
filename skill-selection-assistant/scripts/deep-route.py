@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -19,6 +21,73 @@ GENERIC_NAME_ROUTE_TOKENS = {
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def check_index_freshness(metadata: dict[str, Any], deep_dir: Path) -> dict[str, Any]:
+    source_path = deep_dir / "source-manifest.json"
+    if not source_path.exists():
+        return {"fresh": False, "reason": "source_manifest_missing"}
+    source = load_json(source_path)
+    excluded = {os.path.normcase(str(Path(value).resolve())) for value in source.get("excluded_paths", [])}
+    expected = {
+        os.path.normcase(str(Path(entry["skill_md"]).resolve())): entry
+        for entry in source.get("files", [])
+        if entry.get("skill_md")
+    }
+    current: dict[str, Path] = {}
+    for value in source.get("skills_roots", []):
+        root = Path(value).expanduser().resolve()
+        if not root.is_dir():
+            return {"fresh": False, "reason": "skills_root_missing", "path": str(root)}
+        for candidate in root.rglob("SKILL.md"):
+            resolved = candidate.resolve()
+            key = os.path.normcase(str(resolved))
+            if key not in excluded:
+                current[key] = resolved
+    if set(current) != set(expected):
+        return {
+            "fresh": False,
+            "reason": "skill_set_changed",
+            "added": len(set(current) - set(expected)),
+            "removed": len(set(expected) - set(current)),
+        }
+    for key, path in current.items():
+        stat = path.stat()
+        entry = expected[key]
+        if stat.st_size != int(entry.get("file_length") or -1) or stat.st_mtime_ns != int(entry.get("last_write_ns") or -1):
+            return {"fresh": False, "reason": "skill_file_changed", "path": str(path)}
+    rules_path = Path(str(metadata.get("rules_path") or ""))
+    if not rules_path.is_file() or sha256_file(rules_path) != str(metadata.get("rules_fingerprint") or ""):
+        return {"fresh": False, "reason": "classification_rules_changed"}
+    classifier_path = Path(str(metadata.get("classifier_path") or ""))
+    if not classifier_path.is_file() or sha256_file(classifier_path) != str(metadata.get("classifier_fingerprint") or ""):
+        return {"fresh": False, "reason": "classifier_changed"}
+    return {"fresh": True, "reason": ""}
+
+
+def load_selection_memory(index_dir: Path, selected: dict[str, str]) -> dict[str, int]:
+    memory_path = index_dir / "selection-memory.md"
+    if not memory_path.exists():
+        return {}
+    selected_labels = set(selected.values())
+    scores: dict[str, int] = {}
+    for block in re.split(r"(?m)^###\s+", memory_path.read_text(encoding="utf-8-sig", errors="ignore")):
+        outcome_match = re.search(r"(?m)^- outcome:\s+`?([^`\n]+)`?", block)
+        skill_match = re.search(r"(?m)^- selected_skill:\s+`?([^`\n]+)`?", block)
+        route_match = re.search(r"(?m)^- route:\s+`?([^`\n]+)`?\s*/\s*`?([^`\n]+)`?", block)
+        if not outcome_match or not skill_match:
+            continue
+        category = route_match.group(2).strip() if route_match else ""
+        if selected_labels and category and category not in selected_labels and not any(label in category for label in selected_labels):
+            continue
+        amount = {"selected": 12, "missed": 4, "rejected": -12, "setup-failed": -8}.get(outcome_match.group(1).strip(), 0)
+        name = re.sub(r"[^\w\u4e00-\u9fff]+", "-", skill_match.group(1).strip().lower()).strip("-")
+        scores[name] = max(-30, min(30, scores.get(name, 0) + amount))
+    return scores
 
 
 def tokens(text: str) -> set[str]:
@@ -370,15 +439,24 @@ def run_facet_route(
             "instruction": "Present only these compact branches. Ask the user to choose one, then continue with its exact path.",
         }
 
+    memory_scores = load_selection_memory(deep_dir.parent, selected)
     ranked = [cards[skill_id] for skill_id in candidate_ids]
-    ranked.sort(key=lambda item: (-skill_score(item, query_tokens, raw_query_tokens), item.get("name", "")))
+    ranked.sort(key=lambda item: (
+        -(skill_score(item, query_tokens, raw_query_tokens) + memory_scores.get(str(item.get("canonical_name") or ""), 0)),
+        item.get("name", ""),
+    ))
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in ranked:
         grouped.setdefault(str(item.get("canonical_name") or item.get("name") or ""), []).append(item)
     visible = [variants[0] for variants in grouped.values()]
-    scored_visible = [
-        {"card": item, "score": skill_score(item, query_tokens, raw_query_tokens)} for item in visible
-    ]
+    scored_visible = []
+    for item in visible:
+        memory_score = memory_scores.get(str(item.get("canonical_name") or ""), 0)
+        scored_visible.append({
+            "card": item,
+            "score": skill_score(item, query_tokens, raw_query_tokens) + memory_score,
+            "memory_score": memory_score,
+        })
     if scored_visible:
         top_score = scored_visible[0]["score"]
         if top_score > 0:
@@ -402,6 +480,8 @@ def run_facet_route(
             "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
             "score": entry["score"],
         }
+        if entry["memory_score"]:
+            candidate["memory_score"] = entry["memory_score"]
         if args.verbose:
             candidate["capability_tags"] = tags
         result_candidates.append(candidate)
@@ -435,12 +515,25 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="Return full summaries and all tags in the final shortlist.")
     parser.add_argument("--legacy-hierarchy", action="store_true", help="Use the canonical single-route hierarchy instead of multi-label facets.")
     parser.add_argument("--catalog-shards", action="store_true", help="Continue into alphabetical catalog shards when semantic facets are exhausted.")
+    parser.add_argument("--allow-stale-index", action="store_true", help="Use an index even when its lightweight source manifest is stale.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else script_dir.parent / ".skill-index"
     deep_dir = index_dir / "deep"
     metadata = load_json(deep_dir / "metadata.json")
+    if not args.allow_stale_index:
+        freshness = check_index_freshness(metadata, deep_dir)
+        if not freshness["fresh"]:
+            roots = list(metadata.get("skills_roots") or [metadata.get("skills_root")])
+            print(json.dumps({
+                "mode": "index_stale",
+                "query": args.query,
+                "freshness": freshness,
+                "skills_roots": [value for value in roots if value],
+                "instruction": "Rebuild the per-user deep index before routing. Do not use stale skill classifications.",
+            }, ensure_ascii=False, indent=2))
+            return 0
     keyword_path = deep_dir / "label-keywords.json"
     keywords = load_json(keyword_path) if keyword_path.exists() else {}
     if not args.legacy_hierarchy and (deep_dir / "facets.json").exists() and (deep_dir / "route-cards.json").exists():

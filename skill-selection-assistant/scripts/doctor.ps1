@@ -98,7 +98,7 @@ $checks.Add([pscustomobject]@{ name = "shortlists"; ok = ($shortlistCount -gt 0)
 $recommendation = $null
 if ($summaryOk -and (Test-Path -LiteralPath $recommendScript)) {
   try {
-    $recommendation = (& $recommendScript -Query $Query -IndexDir $IndexDir -SkillsRoot $skillsRootResolved | Out-String | ConvertFrom-Json)
+    $recommendation = (& $recommendScript -Query $Query -IndexDir $IndexDir -SkillsRoot $skillsRootResolved -Legacy | Out-String | ConvertFrom-Json)
     $checks.Add([pscustomobject]@{ name = "sample_recommendation"; ok = ($recommendation.selection.returned -gt 0); detail = "$($recommendation.route.route_type)/$($recommendation.route.category)" })
   }
   catch {

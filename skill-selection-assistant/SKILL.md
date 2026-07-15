@@ -44,7 +44,7 @@ Never define published behavior in a way that requires a hardcoded machine-speci
 Distinguish the router skill from the skill library it scans:
 
 - `SkillInstanceDir` is the installed `skill-selection-assistant` folder that contains this `SKILL.md`, scripts, and generated `.skill-index/`.
-- `SkillsRoot` is the current user's own local Codex skills directory.
+- `SkillsRoot` is one configured local Codex skills directory. A user may have multiple `SkillsRoot` values.
 - The generated `.skill-index/` is stored beside this router skill, but it describes `SkillsRoot`, not the publisher's development machine.
 
 Never assume the downloader has the same number, names, categories, or paths of skills as the publisher. Every install must classify that user's actual local skill library.
@@ -209,10 +209,11 @@ Do not describe or implement offline indexing as scanning a hardcoded personal d
 
 When this skill is installed, updated, or used in a fresh environment, build a local skill index before recommending skills.
 
-Preferred command:
+Build the compact compatibility index, then the exhaustive per-user deep index:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/scan-local-skills.ps1
+python scripts/deep-classify-skills.py --skills-root "<skills root>"
 ```
 
 The scanner should:
@@ -248,21 +249,24 @@ The generated index is a recommendation view, not a destructive filesystem opera
 
 Do not read every local skill before recommendation. Always use a route-first workflow:
 
-When `.skill-index/deep/metadata.json` exists and is fresh, use the hospital-style deep router before the compact legacy recommender. It narrows one classification level at a time and avoids loading the full skill catalog into model context.
+`scripts/recommend-skills.ps1` is the single preferred entry point. It builds or refreshes the per-user index when needed and defaults to the hospital-style deep router. The compact legacy recommender is a compatibility fallback only.
 
-1. Prefer running `scripts/recommend-skills.ps1` with the user's request; it performs route inference and candidate selection in one compact step.
-2. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and then `scripts/select-route-candidates.ps1`.
-3. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
-4. Choose the smallest reliable shortlist from `.skill-index/shortlists/`: start broad only when needed, prefer `specialty/`, and use `adaptive-leaf/` when the inferred specialty plus task type reduces the candidate pool.
-5. Read full route files under `.skill-index/routes/` only when the matching shortlist is missing or clearly insufficient; they are generated only when the scanner is run with `-IncludeFullRoutes`.
-6. Shortlist candidates according to selector scores and the returned `recommendation_policy`; default dynamic recommendations should also respect the relevance gate so weakly related candidates are not shown only because they scored well inside a broad route.
-7. Read the actual candidate `SKILL.md` files only after shortlisting, and only when the recommendation or execution needs details.
-8. Never load the full `.skill-index/skills-index.json` unless route files are missing, stale, or insufficient.
+1. Run `scripts/recommend-skills.ps1` with the user's request.
+2. For `deep_route.mode=choose_category`, present only the returned branches and continue with the chosen branch's exact `-Path`.
+3. For `deep_route.mode=choose_skill`, present the compact final candidates and read only the selected `SKILL.md`.
+4. If the deep runtime is unavailable, use `-Legacy` or run `scripts/infer-route.ps1` and `scripts/select-route-candidates.ps1`.
+5. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
+6. Choose the smallest reliable legacy shortlist only when deep routing is unavailable.
+7. Read full legacy route files only when the matching shortlist is missing or clearly insufficient.
+8. Respect relevance gates and dynamic score windows; never add weak candidates only to reach a fixed count.
+9. Read actual candidate `SKILL.md` files only after shortlisting or user choice.
+10. Never load a complete index or catalog into model context during ordinary selection.
 
 Selector command pattern:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>"
+powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>" -Path "primary_domain=coding|domain_detail=frontend-web"
 powershell -ExecutionPolicy Bypass -File scripts/infer-route.ps1 -Query "<user request>"
 powershell -ExecutionPolicy Bypass -File scripts/select-route-candidates.ps1 -Query "<user request>" -RouteType domain_detail -Category frontend-web
 ```
@@ -280,7 +284,7 @@ Stop asking for deeper categories when the user has not supplied evidence for th
 Build or refresh the exhaustive index after skills are installed, removed, renamed, or materially edited, or when the user explicitly requests a full audit:
 
 ```powershell
-python scripts/deep-classify-skills.py --leaf-target 24
+python scripts/deep-classify-skills.py --skills-root "<root one>" --skills-root "<root two>" --leaf-target 24
 ```
 
 This builder must read every discovered `SKILL.md` in full, preserve an audit record for every installed path, assign multiple domain/specialty/task/output/technology tags, and publish the result atomically under `.skill-index/deep/`. It must never copy or modify the indexed skills.
@@ -335,8 +339,8 @@ At the beginning of a normal project conversation:
 
 1. Detect the user's language.
 2. Summarize the current request internally.
-3. Run `scripts/recommend-skills.ps1` when available.
-4. If the one-command recommender is unavailable, run `scripts/infer-route.ps1` and `scripts/select-route-candidates.ps1`.
+3. Run `scripts/recommend-skills.ps1`; follow its `deep_route.mode` and exact branch paths.
+4. Use legacy inference and shortlists only when the deep runtime is unavailable.
 5. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json` only if route inference is unavailable.
 6. Read only the matching shortlist file if the selector is unavailable.
 7. Match compact route candidates by semantic fit, not only keywords.
@@ -372,7 +376,7 @@ Which one should I use? You can also say "answer directly".
 
 After each selection or skill-management session:
 
-1. Record useful match patterns in `.skill-index/selection-memory.md`.
+1. Record useful match patterns in `.skill-index/selection-memory.md`; deep routing applies only bounded, route-compatible memory scores.
 2. Record missed or poor matches as improvement notes.
 3. If a user repeatedly asks for a workflow that no skill covers, suggest creating a new skill.
 4. If several skills overlap heavily, suggest linking, merging, or marking one as `needs-review`.

@@ -3,6 +3,7 @@ param(
   [string]$Destination = "",
   [string]$SkillsRoot = "",
   [switch]$SkipScan,
+  [switch]$SkipDeepIndex,
   [switch]$Force
 )
 
@@ -48,6 +49,7 @@ foreach ($item in @("SKILL.md", "agents", "rules", "scripts")) {
 
 $scanResult = $null
 $summaryResult = $null
+$deepResult = $null
 if (-not $SkipScan) {
   $scanScript = Join-Path $Destination "scripts\scan-local-skills.ps1"
   if (-not (Test-Path -LiteralPath $scanScript)) {
@@ -75,6 +77,25 @@ if (-not $SkipScan) {
       }
     }
   }
+  if ((-not $SkipDeepIndex) -and $python) {
+    $deepScript = Join-Path $Destination "scripts\deep-classify-skills.py"
+    $indexDir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
+    $resolvedSkillsRoot = $(if ($scanResult) { $scanResult.SkillsRoot } else { $SkillsRoot })
+    if ((Test-Path -LiteralPath $deepScript) -and $resolvedSkillsRoot) {
+      & $python.Source $deepScript --skills-root $resolvedSkillsRoot --index-dir $indexDir | Out-Null
+      if ($LASTEXITCODE -eq 0) {
+        $deepMetadataPath = Join-Path $indexDir "deep\metadata.json"
+        $deepResult = [pscustomobject]@{
+          deep_index_ran = $true
+          deep_index = $deepMetadataPath
+          metadata = $(if (Test-Path -LiteralPath $deepMetadataPath) { Get-Content -LiteralPath $deepMetadataPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null })
+        }
+      }
+      else {
+        $deepResult = [pscustomobject]@{ deep_index_ran = $false; deep_index_skipped_reason = "Deep classifier exited with a non-zero status." }
+      }
+    }
+  }
 }
 
 [pscustomobject]@{
@@ -83,6 +104,8 @@ if (-not $SkipScan) {
   scan_ran = (-not $SkipScan)
   summary_ran = $(if ($summaryResult) { $summaryResult.summary_ran } else { $false })
   summary = $summaryResult
+  deep_index_ran = $(if ($deepResult) { $deepResult.deep_index_ran } else { $false })
+  deep_index = $deepResult
   skills_root = $(if ($scanResult) { $scanResult.SkillsRoot } else { $SkillsRoot })
   index_dir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
 } | ConvertTo-Json -Depth 6

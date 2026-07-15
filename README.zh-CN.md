@@ -79,11 +79,12 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 
 每次推荐前，路由器都会根据 manifest 做一次轻量的新鲜度检查：只比较本机 `SKILL.md` 的路径、大小和修改时间，不会重新读取全部正文。如果安装者新增、删除或修改了 skill，路由器会先重建本机分类索引，再给出推荐，确保候选始终来自这台电脑当前实际安装的 skills。
 
-如果使用 Python 安装器，更新时使用 `--force`；如果当前环境还没有 PowerShell/pwsh，可以先用 `--skip-scan` 只完成复制安装：
+安装器默认先扫描安装者自己的 skill 目录，再全文构建医院式深层索引。更新时使用 `--force`；使用其他工作流构建深层索引时可以传入 `--skip-deep-index`：
 
 ```bash
 python scripts/install-skill.py --force
 python scripts/install-skill.py --skip-scan
+python scripts/install-skill.py --skip-deep-index
 ```
 
 安装后，可以运行诊断脚本检查本地设置：

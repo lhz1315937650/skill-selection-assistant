@@ -8,7 +8,9 @@ param(
   [int]$ScoreWindow = 3,
   [int]$MinRelevanceScore = 3,
   [string]$IndexDir = "",
-  [string]$SkillsRoot = ""
+  [string]$SkillsRoot = "",
+  [string]$Path = "",
+  [switch]$Legacy
 )
 
 $ErrorActionPreference = "Stop"
@@ -21,6 +23,8 @@ if (-not $IndexDir) {
 $inferScript = Join-Path $PSScriptRoot "infer-route.ps1"
 $selectScript = Join-Path $PSScriptRoot "select-route-candidates.ps1"
 $scanScript = Join-Path $PSScriptRoot "scan-local-skills.ps1"
+$deepBuildScript = Join-Path $PSScriptRoot "deep-classify-skills.py"
+$deepRouteScript = Join-Path $PSScriptRoot "deep-route.py"
 
 function Get-ResolvedPathOrEmpty {
   param([string]$Path)
@@ -156,6 +160,67 @@ if (-not (Test-Path -LiteralPath $summaryPath)) {
   throw "Route summary was not generated: $summaryPath"
 }
 
+if (-not $Legacy) {
+  $python = Get-Command python -ErrorAction SilentlyContinue
+  $deepMetadataPath = Join-Path $IndexDir "deep\metadata.json"
+  if ($python -and (Test-Path -LiteralPath $deepBuildScript) -and (Test-Path -LiteralPath $deepRouteScript)) {
+    $manifestForDeep = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $deepRoot = $(if ($SkillsRoot) { $SkillsRoot } else { [string]$manifestForDeep.skills_root })
+    $deepRoots = @($deepRoot)
+    if ((-not $SkillsRoot) -and (Test-Path -LiteralPath $deepMetadataPath)) {
+      try {
+        $existingDeepMetadata = Get-Content -LiteralPath $deepMetadataPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if (@($existingDeepMetadata.skills_roots).Count -gt 0) {
+          $deepRoots = @($existingDeepMetadata.skills_roots | ForEach-Object { [string]$_ } | Where-Object { $_ })
+        }
+      }
+      catch {
+        $deepRoots = @($deepRoot)
+      }
+    }
+    $deepBuildArgs = @($deepBuildScript)
+    foreach ($root in $deepRoots) { $deepBuildArgs += @("--skills-root", $root) }
+    $deepBuildArgs += @("--index-dir", $IndexDir)
+    $shouldBuildDeep = $needsScan -or (-not (Test-Path -LiteralPath $deepMetadataPath))
+    $deepWasRefreshed = $shouldBuildDeep
+    if ($shouldBuildDeep) {
+      & $python.Source @deepBuildArgs | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build the per-user deep skill index."
+      }
+    }
+
+    $deepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }))
+    if ($Path) { $deepArgs += @("--path", $Path) }
+    $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
+    if ($deepResult.mode -eq "index_stale") {
+      & $python.Source @deepBuildArgs | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to refresh the stale per-user deep skill index."
+      }
+      $deepWasRefreshed = $true
+      $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
+    }
+    [pscustomobject]@{
+      query = $Query
+      engine = "deep_hospital"
+      index = [pscustomobject]@{
+        refreshed = ($deepWasRefreshed -or (-not [string]::IsNullOrWhiteSpace($indexRefreshReason)))
+        refresh_reason = $indexRefreshReason
+        skills_root = $manifestForDeep.skills_root
+        scope = "installing-user-local-skills-exhaustive"
+      }
+      deep_route = $deepResult
+      next_step = $(switch ($deepResult.mode) {
+        "choose_category" { "Present only the returned branches, ask the user to choose one, then call recommend-skills.ps1 again with its exact -Path." }
+        "choose_skill" { "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md." }
+        default { [string]$deepResult.instruction }
+      })
+    } | ConvertTo-Json -Depth 14
+    exit 0
+  }
+}
+
 $summary = Get-Content -LiteralPath $summaryPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $route = (& $inferScript -Query $Query -IndexDir $IndexDir | Out-String | ConvertFrom-Json)
 $fallbackReason = ""
@@ -269,6 +334,7 @@ else {
 
 [pscustomobject]@{
   query = $Query
+  engine = "legacy_shortlist"
   index = [pscustomobject]@{
     refreshed = (-not [string]::IsNullOrWhiteSpace($indexRefreshReason))
     refresh_reason = $indexRefreshReason

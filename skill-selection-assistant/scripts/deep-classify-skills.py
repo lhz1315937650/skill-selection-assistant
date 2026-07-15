@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2.2.0"
+SCHEMA_VERSION = "2.3.0"
 DEFAULT_LEAF_TARGET = 24
 MAX_TAGS = {
     "domain_detail": 6,
@@ -246,9 +246,38 @@ def score_rule_set(
     return [name for name, _ in scored], {name: evidence[name] for name, _ in scored}
 
 
-def infer_setup(text: str) -> str:
-    lowered = text.lower()
-    if re.search(r"api[- ]?key|secret key|access token|credentials?|密钥|令牌", lowered):
+def setup_evidence(description: str, body: str) -> str:
+    """Keep explicit prerequisite sections and executable setup commands, not incidental mentions."""
+    selected: list[str] = []
+    active_section = False
+    for line in body.splitlines():
+        heading = re.match(r"^#{2,6}\s+(.+?)\s*$", line)
+        if heading:
+            active_section = bool(re.search(
+                r"requirements?|prerequisites?|installation|setup|configuration|dependencies|"
+                r"安装|配置|前置条件|环境要求|依赖",
+                heading.group(1),
+                re.IGNORECASE,
+            ))
+            continue
+        if active_section or re.search(
+            r"^\s*(?:\$\s*)?(?:npm|pnpm|yarn|pip|pipx|uv|poetry|cargo|go|curl|wget|git clone|docker)\s+",
+            line,
+            re.IGNORECASE,
+        ):
+            selected.append(line)
+    explicit_description = description if re.search(
+        r"\b(?:requires?|prerequisites?|must (?:have|set|provide|configure)|needs? an? )\b|"
+        r"需要(?:提供|配置|安装|登录|联网)|前置条件",
+        description,
+        re.IGNORECASE,
+    ) else ""
+    return f"{explicit_description}\n" + "\n".join(selected)
+
+
+def infer_setup(description: str, body: str) -> str:
+    lowered = setup_evidence(description, body).lower()
+    if re.search(r"api[- ]?key|secret key|access token|credentials?|[a-z][a-z0-9_]+_(?:api_)?key|密钥|令牌", lowered):
         return "api-key"
     if re.search(r"oauth|sign[ -]?in|log[ -]?in|account|workspace selection|账号|登录", lowered):
         return "account"
@@ -309,7 +338,7 @@ def classify_document(
     primary_map = rules.get("primary_map", {})
     primary_domains = list(dict.fromkeys(str(primary_map.get(value) or "general") for value in detail))
     primary_domain = primary_domains[0]
-    setup_level = infer_setup(f"{description}\n{headings}\n{body}")
+    setup_level = infer_setup(description, body)
     route = {
         "primary_domain": primary_domain,
         "primary_domains": primary_domains,
@@ -333,7 +362,7 @@ def classify_document(
         "name": name,
         "canonical_name": canonical_name(name),
         "function_summary": description[:600],
-        "function_detail": description[:1500],
+        "function_detail": normalize_text(f"{description}\n{body}")[:1500],
         "headings": headings_list,
         "primary_domain": primary_domain,
         "primary_domains": primary_domains,
@@ -373,22 +402,68 @@ def classify_document(
     }
 
 
-def discover_files(skills_root: Path, manifest: dict[str, Any]) -> list[tuple[Path, dict[str, Any]]]:
+def resolve_skill_roots(values: list[str]) -> list[Path]:
+    candidates: list[Path] = []
+    if values:
+        candidates.extend(Path(value).expanduser() for value in values if value)
+    else:
+        codex_home = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
+        candidates.append(codex_home / "skills")
+        agents_root = Path.home() / ".agents" / "skills"
+        if agents_root.is_dir():
+            candidates.append(agents_root)
+
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        key = os.path.normcase(str(resolved))
+        if key in seen:
+            continue
+        if not resolved.is_dir():
+            raise FileNotFoundError(f"Skills root does not exist: {resolved}")
+        seen.add(key)
+        roots.append(resolved)
+    if not roots:
+        raise FileNotFoundError("No local skill roots were found. Pass --skills-root explicitly.")
+    return roots
+
+
+def infer_origin(root: Path, path: Path) -> str:
+    relative_parts = {part.lower() for part in path.relative_to(root).parts}
+    root_parts = {part.lower() for part in root.parts}
+    if ".system" in relative_parts:
+        return "official-system"
+    if ".agents" in root_parts or "plugins" in root_parts:
+        return "installed-topic"
+    return "user-local"
+
+
+def discover_files(
+    skills_roots: list[Path],
+    manifest: dict[str, Any],
+    excluded_paths: set[str],
+) -> list[tuple[Path, dict[str, Any]]]:
     by_path: dict[str, tuple[Path, dict[str, Any]]] = {}
     for entry in manifest.get("files", []):
         path = Path(str(entry.get("skill_md") or ""))
-        if path.is_file():
-            by_path[str(path).lower()] = (path, dict(entry))
-    for child in skills_root.iterdir():
-        if not child.is_dir():
-            continue
-        candidate = child / "SKILL.md"
-        if candidate.is_file():
-            by_path.setdefault(str(candidate).lower(), (candidate, {"relative_path": child.name}))
-    system_root = skills_root / ".system"
-    if system_root.is_dir():
-        for candidate in system_root.rglob("SKILL.md"):
-            by_path.setdefault(str(candidate).lower(), (candidate, {"relative_path": str(candidate.parent.relative_to(skills_root))}))
+        key = os.path.normcase(str(path.resolve())) if path.is_file() else ""
+        if key and key not in excluded_paths:
+            by_path[key] = (path.resolve(), dict(entry))
+    for root in skills_roots:
+        for candidate in root.rglob("SKILL.md"):
+            resolved = candidate.resolve()
+            key = os.path.normcase(str(resolved))
+            if key in excluded_paths:
+                continue
+            by_path.setdefault(key, (
+                resolved,
+                {
+                    "relative_path": str(resolved.parent.relative_to(root)),
+                    "origin": infer_origin(root, resolved),
+                    "skills_root": str(root),
+                },
+            ))
     return sorted(by_path.values(), key=lambda item: str(item[0]).lower())
 
 
@@ -615,7 +690,12 @@ def robust_remove(path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exhaustively classify every local SKILL.md into a deep hospital-style hierarchy.")
-    parser.add_argument("--skills-root", default="")
+    parser.add_argument(
+        "--skills-root",
+        action="append",
+        default=[],
+        help="A local skills root to discover recursively. Repeat for multiple roots.",
+    )
     parser.add_argument("--skill-dir", default="")
     parser.add_argument("--index-dir", default="")
     parser.add_argument("--leaf-target", type=int, default=DEFAULT_LEAF_TARGET)
@@ -624,21 +704,15 @@ def main() -> int:
 
     script_dir = Path(__file__).resolve().parent
     skill_dir = Path(args.skill_dir).expanduser().resolve() if args.skill_dir else script_dir.parent
-    if args.skills_root:
-        skills_root = Path(args.skills_root).expanduser().resolve()
-    elif os.environ.get("CODEX_HOME"):
-        skills_root = (Path(os.environ["CODEX_HOME"]).expanduser() / "skills").resolve()
-    else:
-        skills_root = (Path.home() / ".codex" / "skills").resolve()
+    skills_roots = resolve_skill_roots(args.skills_root)
+    skills_root = skills_roots[0]
     index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else skill_dir / ".skill-index"
     manifest_path = index_dir / "manifest.json"
     rules_path = skill_dir / "rules" / "categories.json"
-    if not manifest_path.exists():
-        raise FileNotFoundError(f"Missing manifest: {manifest_path}. Run scan-local-skills.ps1 first.")
     if not rules_path.exists():
         raise FileNotFoundError(f"Missing rules: {rules_path}")
 
-    manifest = load_json(manifest_path)
+    manifest = load_json(manifest_path) if manifest_path.exists() else {"files": []}
     rules = load_json(rules_path)
     compiled_rules = {
         "domain_detail": compile_rules(rules.get("domain_detail_rules", {})),
@@ -665,7 +739,8 @@ def main() -> int:
         log(f"Reusing {len(items)} fully classified records from {reused_generated_at}")
         files_count = len(items)
     else:
-        files = discover_files(skills_root, manifest)
+        excluded_paths = {os.path.normcase(str((skill_dir / "SKILL.md").resolve()))}
+        files = discover_files(skills_roots, manifest, excluded_paths)
         files_count = len(files)
         log(f"Discovered {len(files)} SKILL.md files; reading every file in full")
         for index, (path, entry) in enumerate(files, 1):
@@ -697,12 +772,33 @@ def main() -> int:
     robust_remove(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now().isoformat(timespec="seconds")
+    source_files = [
+        {
+            "skill_md": item["skill_md"],
+            "file_length": item["file_length"],
+            "last_write_ns": Path(item["skill_md"]).stat().st_mtime_ns,
+            "content_hash": item["content_hash"],
+        }
+        for item in items
+    ]
+    source_snapshot = hashlib.sha256(
+        "\n".join(
+            f"{entry['skill_md']}|{entry['file_length']}|{entry['last_write_ns']}"
+            for entry in sorted(source_files, key=lambda value: os.path.normcase(value["skill_md"]))
+        ).encode("utf-8")
+    ).hexdigest()
     metadata = {
         "generated_at": generated_at,
         "schema_version": SCHEMA_VERSION,
         "index_scope": "installing-user-local-skills-exhaustive",
         "skills_root": str(skills_root),
+        "skills_roots": [str(root) for root in skills_roots],
         "skill_instance_dir": str(skill_dir),
+        "source_snapshot": source_snapshot,
+        "rules_path": str(rules_path.resolve()),
+        "rules_fingerprint": hashlib.sha256(rules_path.read_bytes()).hexdigest(),
+        "classifier_path": str(Path(__file__).resolve()),
+        "classifier_fingerprint": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "raw_files": files_count,
         "classified_files": len(items),
         "unique_content_candidates": len(representatives),
@@ -716,6 +812,13 @@ def main() -> int:
         "detailed_function_profiles": True,
     }
     dump_json(temp_dir / "metadata.json", metadata)
+    dump_json(temp_dir / "source-manifest.json", {
+        "schema_version": SCHEMA_VERSION,
+        "skills_roots": [str(root) for root in skills_roots],
+        "excluded_paths": [str((skill_dir / "SKILL.md").resolve())],
+        "source_snapshot": source_snapshot,
+        "files": source_files,
+    })
     dump_json(temp_dir / "hierarchy.json", tree)
     dump_json(temp_dir / "route-counts.json", dict(sorted(route_counts.items())))
     dump_json(temp_dir / "failures.json", failures)
@@ -750,10 +853,18 @@ def main() -> int:
     write_catalog(temp_dir / "DETAILED_SKILL_CATALOG.md", items)
     log("Deep files written; atomically replacing the previous deep index")
     robust_remove(backup_dir)
-    if final_dir.exists():
-        final_dir.rename(backup_dir)
-    temp_dir.rename(final_dir)
-    robust_remove(backup_dir)
+    moved_previous = False
+    try:
+        if final_dir.exists():
+            final_dir.rename(backup_dir)
+            moved_previous = True
+        temp_dir.rename(final_dir)
+    except Exception:
+        if moved_previous and backup_dir.exists() and not final_dir.exists():
+            backup_dir.rename(final_dir)
+        raise
+    else:
+        robust_remove(backup_dir)
     log(f"Completed: raw={files_count}, classified={len(items)}, unique={len(representatives)}, failures={len(failures)}")
     print(json.dumps({"status": "ok", **metadata, "output_dir": str(final_dir)}, ensure_ascii=False, indent=2))
     return 0

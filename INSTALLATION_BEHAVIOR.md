@@ -43,9 +43,9 @@ Published behavior must not:
 - depend on the publisher's username or filesystem layout
 - assume that all users installed the same set of skills
 
-## Future Offline Indexing Direction
+## Per-User Offline Indexing
 
-The project now includes an optional installer that copies the router skill into the user's local Codex skills directory and runs the first scan:
+The installer copies the router skill into the user's local Codex skills directory, runs the compact compatibility scan, and builds the exhaustive deep index by default:
 
 ```bash
 python scripts/install-skill.py
@@ -77,8 +77,10 @@ The intended behavior is:
 
 1. resolve the user's local Codex home or skills root from the runtime environment
 2. scan that installed local skill directory
-3. build a lightweight local catalog of installed skills
-4. use that catalog only as a portable per-user runtime aid
+3. discover an unknown number of `SKILL.md` files across the configured skill roots
+4. read each discovered skill in full and build a multi-label deep index
+5. store a lightweight source manifest so stale classifications can be rejected
+6. use the generated catalog only as a portable per-user runtime aid
 
 If `recommend-skills.ps1` is run before an index exists, it should build the local index automatically with the portable scanner instead of failing immediately.
 

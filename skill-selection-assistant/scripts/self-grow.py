@@ -148,16 +148,26 @@ def main() -> int:
 
     skills_index_path = index_dir / "skills-index.json"
     route_summary_path = index_dir / "route-summary.json"
+    deep_index_path = index_dir / "deep" / "skills-deep-index.ndjson"
+    deep_metadata_path = index_dir / "deep" / "metadata.json"
     memory_path = index_dir / "selection-memory.md"
     if not skills_index_path.exists():
         raise FileNotFoundError(f"Missing skills-index.json: {skills_index_path}")
     if not route_summary_path.exists():
         raise FileNotFoundError(f"Missing route-summary.json: {route_summary_path}")
 
-    skills_index = load_json(skills_index_path)
     route_summary = load_json(route_summary_path)
-    skills = skills_index.get("skills", [])
-    total = int(route_summary.get("total") or len(skills))
+    index_source = "legacy"
+    if deep_index_path.exists() and deep_metadata_path.exists():
+        with deep_index_path.open("r", encoding="utf-8-sig") as handle:
+            skills = [json.loads(line) for line in handle if line.strip()]
+        deep_metadata = load_json(deep_metadata_path)
+        total = int(deep_metadata.get("classified_files") or len(skills))
+        index_source = "deep"
+    else:
+        skills_index = load_json(skills_index_path)
+        skills = skills_index.get("skills", [])
+        total = int(route_summary.get("total") or len(skills))
 
     summary = summarize_skills(skills)
     summary["adaptive_leaf"] = [
@@ -170,6 +180,7 @@ def main() -> int:
     report = {
         "generated_at": datetime.now().isoformat(timespec="seconds"),
         "index_dir": str(index_dir),
+        "index_source": index_source,
         "output_schema_version": route_summary.get("output_schema_version"),
         "rules_schema_version": route_summary.get("rules_schema_version"),
         "raw_total": route_summary.get("raw_total"),
@@ -207,6 +218,7 @@ def main() -> int:
             "",
             f"- 生成时间: `{report['generated_at']}`",
             f"- 索引目录: `{index_dir}`",
+            f"- 分析来源: `{report['index_source']}`",
             f"- 输出版本: `{report['output_schema_version']}`",
             f"- 规则版本: `{report['rules_schema_version']}`",
             f"- 原始 skill: `{report['raw_total']}`",
@@ -276,6 +288,7 @@ def main() -> int:
             {
                 "status": "generated",
                 "index_dir": str(index_dir),
+                "index_source": index_source,
                 "markdown": str(markdown_path),
                 "json": str(json_path),
                 "suggestion_count": len(suggestions),

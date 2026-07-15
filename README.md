@@ -25,7 +25,7 @@ This skill adds a lightweight selection layer that makes multi-skill setups feel
 ## Core Behavior
 
 - inspects the user's local skill library before continuing with a normal request
-- optionally scans the local skills root on install or first use
+- discovers and scans the installing user's configured skill roots on install or first use
 - classifies skills by origin, broad domain, detailed domain, specialty, adaptive leaf route, task type, output type, setup level, and status
 - prefers the smallest reliable route instead of a fixed-depth category tree, using adaptive leaves such as `specialty=frontend-style-ui|task=generate` when they reduce the candidate pool
 - generates a local classification map so users can inspect their own skill distribution without reading the full index
@@ -54,7 +54,7 @@ At recommendation time, the assistant chooses the smallest reliable matching rou
 
 ## Exhaustive Hospital-Style Routing
 
-For very large libraries, the optional deep index reads every installed `SKILL.md` in full once and builds an adaptive reception-desk hierarchy:
+The default per-user deep index reads every discovered `SKILL.md` in full once and builds an adaptive reception-desk hierarchy:
 
 ```text
 reception -> primary domain -> detailed domain -> specialty -> task -> technology -> output -> setup -> skill
@@ -75,7 +75,7 @@ python scripts/deep-route.py --query "build an Anime.js frontend animation"
 python scripts/deep-route.py --query "build an Anime.js frontend animation" --path "primary_domain=coding|domain_detail=frontend-web"
 ```
 
-The generated `.skill-index/deep/` directory belongs only to the installing user. It contains the detailed catalog, structured function profiles, multi-label `facets.json`, compact `route-cards.json`, hierarchy, and classification evidence and must never be committed or shipped in a release. Normal routing exposes only dynamically selected current branches or a small final shortlist. Candidate summaries are truncated and only matched tags are returned by default; `--verbose` is reserved for explicit detailed comparisons.
+The generated `.skill-index/deep/` directory belongs only to the installing user. It contains the detailed catalog, structured function profiles, multi-label facets, compact route cards, classification evidence, and `source-manifest.json` freshness data and must never be committed or shipped in a release. Normal routing exposes only dynamically selected current branches or a small final shortlist.
 
 ## Important Portability Rule
 
@@ -296,15 +296,16 @@ On Windows, the PowerShell installer is also supported:
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
-This copies the router skill into your local Codex skills directory and runs the first local scan. Re-run with `-Force` when updating an existing installation.
+This copies the router skill, runs the compact compatibility scan, and builds the exhaustive per-user deep index. Re-run with `-Force` when updating an existing installation.
 
 After the first scan, the installer also tries to generate `.skill-index/DETAILED_CLASSIFICATION.md`, `.skill-index/detailed-classification.json`, and `.skill-index/domain-task-matrix.csv`.
 
-For Python installs, use `--force` when updating and `--skip-scan` if PowerShell/pwsh is not available yet:
+For Python installs, use `--force` when updating, `--skip-scan` to copy only, or `--skip-deep-index` when an external workflow will build the exhaustive local classification:
 
 ```bash
 python scripts/install-skill.py --force
 python scripts/install-skill.py --skip-scan
+python scripts/install-skill.py --skip-deep-index
 ```
 
 After installation, you can diagnose the local setup:
@@ -351,6 +352,9 @@ The smoke test uses a tiny fixture skill library and verifies:
 - stale route and shortlist cleanup on rescan
 - route inference for frontend and academic requests
 - one-command recommendation through `recommend-skills.ps1`
+- default hospital-style recommendation with exact `-Path` continuation
+- multi-root exhaustive discovery and source-manifest freshness checks
+- explicit-requirement setup detection that ignores incidental documentation examples
 - local self-growth memory recording through `record-selection-memory.ps1`
 - first-time install diagnostics and optional index repair through `doctor.ps1 -Fix`
 

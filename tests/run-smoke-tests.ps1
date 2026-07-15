@@ -24,6 +24,7 @@ $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recomm
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
 $summarizeScript = Join-Path $repoRoot "skill-selection-assistant\scripts\summarize-index.py"
+$selfGrowScript = Join-Path $repoRoot "skill-selection-assistant\scripts\self-grow.py"
 $deepClassifyScript = Join-Path $repoRoot "skill-selection-assistant\scripts\deep-classify-skills.py"
 $deepRouteScript = Join-Path $repoRoot "skill-selection-assistant\scripts\deep-route.py"
 $installScript = Join-Path $repoRoot "scripts\install-skill.ps1"
@@ -52,13 +53,13 @@ try {
   $index = Read-Json -Path $indexPath
   $manifest = Read-Json -Path $manifestPath
   $summary = Read-Json -Path $summaryPath
-  Assert-True ([int]$index.raw_total -eq 11) "raw_total should be 11"
-  Assert-True ([int]$index.total -eq 10) "total should preserve same-name variants and merge exact duplicates"
+  Assert-True ([int]$index.raw_total -eq 13) "raw_total should include every fixture"
+  Assert-True ([int]$index.total -eq 12) "total should preserve same-name variants and merge exact duplicates"
   Assert-True ([int]$index.duplicates_removed -eq 1) "duplicates_removed should be 1"
   Assert-True ($summary.index_scope -eq "installing-user-local-skills") "route summary should declare per-user index scope"
   Assert-True ($summary.skill_instance_dir -ne $summary.skills_root) "summary should distinguish the installed skill instance from the scanned skills root"
   Assert-True ($manifest.cache_file -eq "parsed-skills-cache.ndjson") "manifest should point to NDJSON parse cache"
-  Assert-True ($summary.rules_schema_version -eq "1.6") "route summary should expose shared rules schema"
+  Assert-True ($summary.rules_schema_version -eq "1.7") "route summary should expose shared rules schema"
   Assert-True ($summary.output_schema_version -eq "1.6.0") "route summary should expose adaptive route schema"
   Assert-True ($null -eq $manifest.files[0].item) "manifest should not embed full parsed skill items"
 
@@ -66,15 +67,37 @@ try {
   Assert-True (Test-Path -LiteralPath $deepRouteScript) "deep-route.py should exist"
   & python $deepClassifyScript --skills-root $skillRoot --skill-dir (Join-Path $repoRoot "skill-selection-assistant") --index-dir $indexDir --leaf-target 3 | Out-Null
   $deepMetadata = Read-Json -Path (Join-Path $indexDir "deep\metadata.json")
-  Assert-True ([int]$deepMetadata.raw_files -eq 11) "deep classifier should read every fixture SKILL.md"
-  Assert-True ([int]$deepMetadata.classified_files -eq 11) "deep classifier should classify every fixture SKILL.md"
+  Assert-True ([int]$deepMetadata.raw_files -eq 13) "deep classifier should read every fixture SKILL.md"
+  Assert-True ([int]$deepMetadata.classified_files -eq 13) "deep classifier should classify every fixture SKILL.md"
   Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
   Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
-  Assert-True ($deepMetadata.schema_version -eq "2.2.0") "deep classifier should expose multi-label facet schema"
+  Assert-True ($deepMetadata.schema_version -eq "2.3.0") "deep classifier should expose portable source-manifest schema"
   Assert-True ($deepMetadata.multi_label_facets -eq $true) "deep classifier should enable multi-label facets"
   Assert-True ($deepMetadata.detailed_function_profiles -eq $true) "deep classifier should generate detailed function profiles"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\facets.json")) "deep classifier should generate facet index"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\route-cards.json")) "deep classifier should generate compact route cards"
+  Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\source-manifest.json")) "deep classifier should generate a portable source manifest"
+  $deepItems = @(Get-Content -LiteralPath (Join-Path $indexDir "deep\skills-deep-index.ndjson") -Encoding UTF8 | ForEach-Object { $_ | ConvertFrom-Json })
+  $docsOnly = @($deepItems | Where-Object { $_.name -eq "setup-docs-only" })[0]
+  $explicitApi = @($deepItems | Where-Object { $_.name -eq "explicit-api-client" })[0]
+  Assert-True ($docsOnly.setup_level -eq "none") "incidental setup wording should not create a runtime requirement"
+  Assert-True (-not (@($docsOnly.domain_detail) -contains "skill-management")) "generic references to this skill should not imply skill management"
+  Assert-True ($explicitApi.setup_level -eq "api-key") "explicit API-key prerequisites should remain detectable"
+
+  $secondaryRoot = Join-Path $outputRoot "secondary-skills"
+  $secondarySkillDir = Join-Path $secondaryRoot "secondary-helper"
+  New-Item -ItemType Directory -Force -Path $secondarySkillDir | Out-Null
+  Set-Content -LiteralPath (Join-Path $secondarySkillDir "SKILL.md") -Encoding UTF8 -Value @(
+    "---",
+    "name: secondary-helper",
+    "description: Maintain a secondary configured skill source.",
+    "---"
+  )
+  $multiRootIndex = Join-Path $outputRoot "multi-root-index"
+  & python $deepClassifyScript --skills-root $skillRoot --skills-root $secondaryRoot --skill-dir (Join-Path $repoRoot "skill-selection-assistant") --index-dir $multiRootIndex --leaf-target 3 | Out-Null
+  $multiRootMetadata = Read-Json -Path (Join-Path $multiRootIndex "deep\metadata.json")
+  Assert-True (@($multiRootMetadata.skills_roots).Count -eq 2) "deep classifier should support multiple configured skill roots"
+  Assert-True ([int]$multiRootMetadata.raw_files -eq 14) "multi-root discovery should include skills from every configured root"
 
   $deepPath = ""
   $deepResult = $null
@@ -128,7 +151,11 @@ try {
   Assert-True ($researchRouteInference.category -eq "research-literature-review") "academic query should infer literature review specialty"
   Assert-True ($researchRouteInference.domain_detail -eq "academic-research") "academic query should preserve academic-research department"
 
-  $recommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir | Out-String | ConvertFrom-Json)
+  $deepRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($deepRecommendation.engine -eq "deep_hospital") "the one-command recommender should prefer the deep hospital router"
+  Assert-True (@("choose_category", "choose_skill") -contains $deepRecommendation.deep_route.mode) "deep recommendation should return the next hospital-routing step"
+
+  $recommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($recommendation.route.route_type -eq "adaptive_leaf") "recommendation should use adaptive leaf route"
   Assert-True ($recommendation.route.category -eq "specialty=frontend-style-ui|task=generate") "recommendation should use frontend-style-ui generate route"
   Assert-True ($recommendation.selection.source_file -like "*shortlists*") "recommendation should read from shortlist"
@@ -139,18 +166,18 @@ try {
 
   $projectIndexDir = Join-Path $outputRoot "project-index"
   & $scanScript -SkillsRoot $skillRoot -OutputDir $projectIndexDir | Out-Null
-  $projectRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -Limit 3 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
+  $projectRecommendation = (& $recommendScript -Query "organize this bot project structure and write README" -Limit 3 -IndexDir $projectIndexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($projectRecommendation.route.category -eq "project-structure-readme") "project-structure query should infer project-structure-readme specialty"
   Assert-True ($projectRecommendation.route.domain_detail -eq "project-maintenance") "project-structure query should preserve project-maintenance department"
   Assert-True (@("project-helper", "readme-maintainer", "repo-cleanup-helper") -contains $projectRecommendation.selection.candidates[0].name) "project workspace skills should outrank generic coding skills"
 
-  $dynamicRecommendation = (& $recommendScript -Query "organize this bot repo project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir | Out-String | ConvertFrom-Json)
+  $dynamicRecommendation = (& $recommendScript -Query "organize this bot repo project structure and write README" -MaxRecommendations 6 -ScoreWindow 100 -IndexDir $projectIndexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($dynamicRecommendation.selection.recommendation_policy.mode -eq "dynamic_score_window") "omitting -Limit should use dynamic score-window recommendations"
   Assert-True ([int]$dynamicRecommendation.selection.returned -gt 0) "dynamic recommendations should return relevant candidates"
   Assert-True ([int]$dynamicRecommendation.selection.returned -le 6) "dynamic recommendations should respect MaxRecommendations"
 
   $autoIndexDir = Join-Path $outputRoot "auto-index"
-  $autoRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $autoIndexDir -SkillsRoot $skillRoot | Out-String | ConvertFrom-Json)
+  $autoRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $autoIndexDir -SkillsRoot $skillRoot -Legacy | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath (Join-Path $autoIndexDir "route-summary.json")) "recommend-skills.ps1 should auto-scan when index is missing"
   Assert-True ($autoRecommendation.index.refreshed -eq $true) "first-use recommendation should report that the local index was generated"
   Assert-True ($autoRecommendation.index.refresh_reason -eq "index_missing") "first-use recommendation should expose the index refresh reason"
@@ -160,6 +187,7 @@ try {
   $freshnessIndexDir = Join-Path $outputRoot "freshness-index"
   Copy-Item -LiteralPath $skillRoot -Destination $freshnessRoot -Recurse -Force
   & $scanScript -SkillsRoot $freshnessRoot -OutputDir $freshnessIndexDir | Out-Null
+  & python $deepClassifyScript --skills-root $freshnessRoot --skill-dir (Join-Path $repoRoot "skill-selection-assistant") --index-dir $freshnessIndexDir --leaf-target 3 | Out-Null
   $beforeRefresh = Read-Json -Path (Join-Path $freshnessIndexDir "skills-index.json")
   $newSkillDir = Join-Path $freshnessRoot "portable-kubernetes-deployer"
   New-Item -ItemType Directory -Force -Path $newSkillDir | Out-Null
@@ -171,7 +199,10 @@ try {
     "",
     "# Portable Kubernetes Deployer"
   )
-  $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot | Out-String | ConvertFrom-Json)
+  $staleDeepResult = (& python $deepRouteScript --query "deploy a Kubernetes application" --index-dir $freshnessIndexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($staleDeepResult.mode -eq "index_stale") "deep router should refuse stale per-user classifications"
+  Assert-True ($staleDeepResult.freshness.reason -eq "skill_set_changed") "deep freshness result should explain that the installed skill set changed"
+  $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot -Legacy | Out-String | ConvertFrom-Json)
   $afterRefresh = Read-Json -Path (Join-Path $freshnessIndexDir "skills-index.json")
   Assert-True ($refreshedRecommendation.index.refreshed -eq $true) "recommendation should refresh when the installing user's local skill library changes"
   Assert-True ($refreshedRecommendation.index.refresh_reason -eq "local_skill_library_changed") "stale-index refresh should expose the local-library change reason"
@@ -187,6 +218,10 @@ try {
     Assert-True (Test-Path -LiteralPath $candidate.skill_md) "every recommendation should point to an installed SKILL.md"
     Assert-True ($installedSkillPaths -contains [string]$candidate.skill_md) "recommendations should come only from the scanned installing-user skills root"
   }
+  $refreshedDeepRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot | Out-String | ConvertFrom-Json)
+  Assert-True ($refreshedDeepRecommendation.engine -eq "deep_hospital") "default recommendation should rebuild and use a stale deep index"
+  Assert-True ($refreshedDeepRecommendation.index.refreshed -eq $true) "deep recommendation should report a source-manifest refresh"
+  Assert-True ($refreshedDeepRecommendation.deep_route.mode -ne "index_stale") "default recommendation should not expose stale deep results after rebuilding"
 
   Assert-True (Test-Path -LiteralPath $memoryScript) "record-selection-memory.ps1 should exist"
   $memoryResult = (& $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType "domain_detail" -Category "frontend-web" -IndexDir $indexDir | Out-String | ConvertFrom-Json)
@@ -194,13 +229,18 @@ try {
   Assert-True (Test-Path -LiteralPath $memoryResult.memory) "selection memory should exist"
   $memoryText = Get-Content -LiteralPath $memoryResult.memory -Raw -Encoding UTF8
   Assert-True ($memoryText.Contains("frontend-design")) "selection memory should include selected skill"
+  $deepMemoryResult = (& python $deepRouteScript --query "build a beautiful frontend UI" --index-dir $indexDir --path $deepPath --limit 12 | Out-String | ConvertFrom-Json)
+  $deepRememberedCandidate = @($deepMemoryResult.candidates | Where-Object { $_.name -eq "frontend-design" })[0]
+  Assert-True ([int]$deepRememberedCandidate.memory_score -gt 0) "deep routing should apply bounded memory inside a compatible selected route"
 
   $memoryRankIndexDir = Join-Path $outputRoot "memory-rank-index"
   & $scanScript -SkillsRoot $skillRoot -OutputDir $memoryRankIndexDir | Out-Null
   & $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "bot-plugin-helper" -RouteType "adaptive_leaf" -Category "specialty=frontend-style-ui|task=generate" -IndexDir $memoryRankIndexDir | Out-Null
-  $memoryRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $memoryRankIndexDir | Out-String | ConvertFrom-Json)
+  $memoryRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $memoryRankIndexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($memoryRecommendation.selection.candidates[0].name -eq "bot-plugin-helper") "selection memory should influence future ranking within the active adaptive route"
   Assert-True ($memoryRecommendation.selection.candidates[0].memory_score -gt 0) "memory-boosted candidate should expose memory_score"
+  $selfGrowthResult = (& python $selfGrowScript --index-dir $indexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($selfGrowthResult.index_source -eq "deep") "self-growth audit should analyze the deep index when available"
 
   Assert-True (Test-Path -LiteralPath $doctorScript) "doctor.ps1 should exist"
   Assert-True (Test-Path -LiteralPath $summarizeScript) "summarize-index.py should exist"
@@ -218,12 +258,18 @@ try {
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest "SKILL.md")) "installer should copy SKILL.md"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\route-summary.json")) "installer should run first scan"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\DETAILED_CLASSIFICATION.md")) "installer should generate classification summary"
+  Assert-True ($installResult.deep_index_ran -eq $true) "installer should build the exhaustive per-user deep index by default"
+  Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\deep\source-manifest.json")) "installer deep index should include source freshness data"
 
   Assert-True (Test-Path -LiteralPath $pythonInstallScript) "install-skill.py should exist"
   $pythonInstallDest = Join-Path $outputRoot "python-installed\skills\skill-selection-assistant"
   $pythonInstallResult = (& python $pythonInstallScript --destination $pythonInstallDest --skills-root $skillRoot --skip-scan --force | Out-String | ConvertFrom-Json)
   Assert-True ($pythonInstallResult.status -eq "installed") "install-skill.py should report installed"
   Assert-True (Test-Path -LiteralPath (Join-Path $pythonInstallDest "SKILL.md")) "Python installer should copy SKILL.md"
+  $pythonDeepInstallDest = Join-Path $outputRoot "python-deep-installed\skills\skill-selection-assistant"
+  $pythonDeepInstallResult = (& python $pythonInstallScript --destination $pythonDeepInstallDest --skills-root $skillRoot --force | Out-String | ConvertFrom-Json)
+  Assert-True ($pythonDeepInstallResult.deep_index_ran -eq $true) "Python installer should build the exhaustive deep index by default"
+  Assert-True (Test-Path -LiteralPath (Join-Path $pythonDeepInstallDest ".skill-index\deep\source-manifest.json")) "Python installer should publish deep source freshness data"
 
   $selfOnlyRoot = Join-Path $outputRoot "self-only\skills"
   $selfOnlyDest = Join-Path $selfOnlyRoot "skill-selection-assistant"
@@ -231,7 +277,7 @@ try {
   Assert-True ($selfOnlyInstall.status -eq "installed") "installer should support a self-only skills root"
   $selfOnlySummary = Read-Json -Path (Join-Path $selfOnlyDest ".skill-index\route-summary.json")
   Assert-True ([int]$selfOnlySummary.raw_total -eq 0) "scanner should exclude the router skill itself from candidates"
-  $selfOnlyRecommendation = (& (Join-Path $selfOnlyDest "scripts\recommend-skills.ps1") -Query "analyze data" -Limit 3 -IndexDir (Join-Path $selfOnlyDest ".skill-index") -SkillsRoot $selfOnlyRoot | Out-String | ConvertFrom-Json)
+  $selfOnlyRecommendation = (& (Join-Path $selfOnlyDest "scripts\recommend-skills.ps1") -Query "analyze data" -Limit 3 -IndexDir (Join-Path $selfOnlyDest ".skill-index") -SkillsRoot $selfOnlyRoot -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ([int]$selfOnlyRecommendation.selection.returned -eq 0) "self-only skills root should return no recommendations instead of recommending itself"
 
   Assert-True (Test-Path -LiteralPath $cleanScript) "clean-local-artifacts.ps1 should exist"

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.6",
+  "schema_version": "1.7",
   "domain_detail_rules": {
     "academic-research": "academic|paper|literature|citation|arxiv|research|scholar|thesis|abstract|methodology|empirical|experiment",
     "writing-editing": "writing|writer|article|blog|copy|proofread|polish|tone|grammar|humanizer|story|outline",
@@ -21,7 +21,7 @@
     "business-product": "product|prd|market|sales|customer|finance|business|strategy|roadmap",
     "automation-integration": "automation|integrat|connector|composio|zapier|workflow",
     "project-maintenance": "project|workspace|repo|repository|readme|onboarding|structure|architecture|cleanup|guideline|project guideline",
-    "skill-management": "\\bskill\\b|skills|skill-selection|skill-router|skill-installer|skill-creator|skill-improver|skill-scanner|claude skill|codex skill",
+    "skill-management": "skill[- ]?(?:selection|router|routing|installer|creator|authoring|improver|scanner|catalog|index|management)|(?:select|recommend|route|install|create|author|improve|scan|catalog|index|manage)(?:ing)? (?:local )?skills|skills? (?:selection|routing|installation|creation|authoring|improvement|scanner|catalog|index|management)|claude skill (?:creation|authoring|installation|management)|codex skill (?:creation|authoring|installation|management)|技能(?:选择|推荐|路由|安装|创建|编写|改进|扫描|目录|索引|管理)",
     "data-visualization": "visualization|dataviz|chart|plot|dashboard|d3|graph|figure|diagram",
     "research-citation": "citation|reference|bibliography|bibtex|zotero|literature review|paper review|academic paper",
     "knowledge-management": "obsidian|knowledge|notes|zettelkasten|vault|wiki|memory|knowledge graph|notebook",

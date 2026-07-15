@@ -107,12 +107,37 @@ def run_summary(destination: Path, index_dir: str) -> dict:
     return parsed
 
 
+def run_deep_index(destination: Path, index_dir: str, skills_root: str) -> dict:
+    deep_script = destination / "scripts" / "deep-classify-skills.py"
+    if not deep_script.exists():
+        return {"deep_index_ran": False, "deep_index_skipped_reason": f"Deep classifier not found: {deep_script}"}
+    if not skills_root:
+        return {"deep_index_ran": False, "deep_index_skipped_reason": "Skills root is unknown."}
+    result = subprocess.run(
+        [sys.executable, str(deep_script), "--skills-root", skills_root, "--index-dir", index_dir],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {
+            "deep_index_ran": False,
+            "deep_index_skipped_reason": "Deep classifier exited with a non-zero status.",
+            "deep_index_stdout": result.stdout.strip(),
+            "deep_index_stderr": result.stderr.strip(),
+        }
+    metadata_path = Path(index_dir) / "deep" / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig")) if metadata_path.exists() else {}
+    return {"deep_index_ran": True, "deep_index": str(metadata_path), "deep_index_metadata": metadata}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install skill-selection-assistant into a local Codex skills directory.")
     parser.add_argument("--codex-home", default="", help="Codex home directory. Defaults to CODEX_HOME or ~/.codex.")
     parser.add_argument("--destination", default="", help="Install destination. Defaults to <codex-home>/skills/skill-selection-assistant.")
     parser.add_argument("--skills-root", default="", help="Skills root to scan. Defaults to the runtime resolver in scan-local-skills.ps1.")
     parser.add_argument("--skip-scan", action="store_true", help="Copy the skill without running the first local scan.")
+    parser.add_argument("--skip-deep-index", action="store_true", help="Skip the exhaustive first-use SKILL.md classification.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing installed router skill.")
     args = parser.parse_args()
 
@@ -132,8 +157,19 @@ def main() -> int:
         scan_result = run_scan(destination=destination, skills_root=args.skills_root)
     index_dir = str(scan_result.get("OutputDir", destination / ".skill-index"))
     summary_result: dict = {"summary_ran": False, "summary_skipped_reason": "scan was skipped or did not complete."}
+    deep_result: dict = {"deep_index_ran": False, "deep_index_skipped_reason": "deep indexing was not requested."}
     if scan_result.get("scan_ran"):
         summary_result = run_summary(destination=destination, index_dir=index_dir)
+    if not args.skip_scan and not args.skip_deep_index:
+        deep_result = run_deep_index(
+            destination=destination,
+            index_dir=index_dir,
+            skills_root=str(scan_result.get("SkillsRoot") or args.skills_root or destination.parent),
+        )
+    elif args.skip_deep_index:
+        deep_result = {"deep_index_ran": False, "deep_index_skipped_reason": "skip-deep-index was requested."}
+    else:
+        deep_result = {"deep_index_ran": False, "deep_index_skipped_reason": "skip-scan was requested."}
 
     output = {
         "status": "installed",
@@ -142,6 +178,7 @@ def main() -> int:
         "index_dir": index_dir,
         **scan_result,
         **summary_result,
+        **deep_result,
     }
     print(json.dumps(output, ensure_ascii=False, indent=2))
     return 0
