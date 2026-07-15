@@ -79,14 +79,13 @@ The intended behavior is:
 2. scan that installed local skill directory
 3. discover an unknown number of `SKILL.md` files across the configured skill roots
 4. read each discovered skill in full and build a multi-label deep index
-5. store a lightweight source manifest so stale classifications can be rejected
-6. use the generated catalog only as a portable per-user runtime aid
+5. store every discovered path in a lightweight source manifest, including classification failures
+6. on compatible refreshes, reclassify only added or modified sources and remove deleted sources
+7. use the generated catalog only as a portable per-user runtime aid
 
-If `recommend-skills.ps1` is run before an index exists, it should build the local index automatically with the portable scanner instead of failing immediately.
+If `recommend-skills.py` is run before an index exists, it builds the deep local index automatically without requiring PowerShell. `recommend-skills.ps1` provides the equivalent PowerShell entry point and the legacy compact scanner fallback.
 
-The catalog should reflect the user's actual installed skills, because every user's local skill set may be different.
-
-If `recommend-skills.ps1` is run before an index exists, it should build the local index automatically with the portable scanner instead of failing immediately.
+The catalog should reflect the user's actual installed skills across every configured root, because every user's local skill set may be different. Both installers accept repeated skills-root arguments.
 
 Users can also diagnose and repair a first install with:
 

@@ -107,14 +107,17 @@ def run_summary(destination: Path, index_dir: str) -> dict:
     return parsed
 
 
-def run_deep_index(destination: Path, index_dir: str, skills_root: str) -> dict:
+def run_deep_index(destination: Path, index_dir: str, skills_roots: list[str]) -> dict:
     deep_script = destination / "scripts" / "deep-classify-skills.py"
     if not deep_script.exists():
         return {"deep_index_ran": False, "deep_index_skipped_reason": f"Deep classifier not found: {deep_script}"}
-    if not skills_root:
-        return {"deep_index_ran": False, "deep_index_skipped_reason": "Skills root is unknown."}
+    if not skills_roots:
+        return {"deep_index_ran": False, "deep_index_skipped_reason": "Skills roots are unknown."}
+    command = [sys.executable, str(deep_script), "--index-dir", index_dir]
+    for skills_root in skills_roots:
+        command.extend(["--skills-root", skills_root])
     result = subprocess.run(
-        [sys.executable, str(deep_script), "--skills-root", skills_root, "--index-dir", index_dir],
+        command,
         text=True,
         capture_output=True,
         check=False,
@@ -135,7 +138,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Install skill-selection-assistant into a local Codex skills directory.")
     parser.add_argument("--codex-home", default="", help="Codex home directory. Defaults to CODEX_HOME or ~/.codex.")
     parser.add_argument("--destination", default="", help="Install destination. Defaults to <codex-home>/skills/skill-selection-assistant.")
-    parser.add_argument("--skills-root", default="", help="Skills root to scan. Defaults to the runtime resolver in scan-local-skills.ps1.")
+    parser.add_argument("--skills-root", action="append", default=[], help="Skills root to index. Repeat for multiple roots; the first root is also used by the legacy scanner.")
     parser.add_argument("--skip-scan", action="store_true", help="Copy the skill without running the first local scan.")
     parser.add_argument("--skip-deep-index", action="store_true", help="Skip the exhaustive first-use SKILL.md classification.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing installed router skill.")
@@ -154,17 +157,25 @@ def main() -> int:
 
     scan_result: dict = {"scan_ran": False, "scan_skipped_reason": "skip-scan was requested."}
     if not args.skip_scan:
-        scan_result = run_scan(destination=destination, skills_root=args.skills_root)
+        scan_result = run_scan(destination=destination, skills_root=args.skills_root[0] if args.skills_root else "")
     index_dir = str(scan_result.get("OutputDir", destination / ".skill-index"))
     summary_result: dict = {"summary_ran": False, "summary_skipped_reason": "scan was skipped or did not complete."}
     deep_result: dict = {"deep_index_ran": False, "deep_index_skipped_reason": "deep indexing was not requested."}
     if scan_result.get("scan_ran"):
         summary_result = run_summary(destination=destination, index_dir=index_dir)
+    deep_roots = list(args.skills_root)
+    if not deep_roots:
+        discovered_root = str(scan_result.get("SkillsRoot") or destination.parent)
+        deep_roots.append(discovered_root)
+        agents_root = Path.home() / ".agents" / "skills"
+        if agents_root.is_dir():
+            deep_roots.append(str(agents_root))
+    deep_roots = list(dict.fromkeys(str(Path(value).expanduser().resolve()) for value in deep_roots if value))
     if not args.skip_scan and not args.skip_deep_index:
         deep_result = run_deep_index(
             destination=destination,
             index_dir=index_dir,
-            skills_root=str(scan_result.get("SkillsRoot") or args.skills_root or destination.parent),
+            skills_roots=deep_roots,
         )
     elif args.skip_deep_index:
         deep_result = {"deep_index_ran": False, "deep_index_skipped_reason": "skip-deep-index was requested."}
@@ -174,7 +185,8 @@ def main() -> int:
     output = {
         "status": "installed",
         "destination": str(destination.resolve()),
-        "skills_root": scan_result.get("SkillsRoot", args.skills_root),
+        "skills_root": scan_result.get("SkillsRoot", deep_roots[0] if deep_roots else ""),
+        "skills_roots": deep_roots,
         "index_dir": index_dir,
         **scan_result,
         **summary_result,

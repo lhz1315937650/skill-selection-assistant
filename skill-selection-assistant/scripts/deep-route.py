@@ -82,8 +82,11 @@ def load_selection_memory(index_dir: Path, selected: dict[str, str]) -> dict[str
         if not outcome_match or not skill_match:
             continue
         category = route_match.group(2).strip() if route_match else ""
-        if selected_labels and category and category not in selected_labels and not any(label in category for label in selected_labels):
-            continue
+        if category:
+            if not selected_labels:
+                continue
+            if category not in selected_labels and not any(label in category for label in selected_labels):
+                continue
         amount = {"selected": 12, "missed": 4, "rejected": -12, "setup-failed": -8}.get(outcome_match.group(1).strip(), 0)
         name = re.sub(r"[^\w\u4e00-\u9fff]+", "-", skill_match.group(1).strip().lower()).strip("-")
         scores[name] = max(-30, min(30, scores.get(name, 0) + amount))
@@ -475,6 +478,7 @@ def run_facet_route(
             "matched_tags": matched_tags(item, query_tokens, selected),
             "tag_count": len(tags),
             "setup_level": item.get("setup_level", "unknown"),
+            "setup_requirements": item.get("setup_requirements") or [item.get("setup_level", "unknown")],
             "origin": item.get("origin", "unknown"),
             "skill_md": item.get("skill_md", ""),
             "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
@@ -594,6 +598,7 @@ def main() -> int:
                     "function_summary": item["function_summary"],
                     "capability_tags": item["capability_tags"],
                     "setup_level": item["setup_level"],
+                    "setup_requirements": item.get("setup_requirements") or [item["setup_level"]],
                     "origin": item["origin"],
                     "skill_md": item["skill_md"],
                     "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- added a cross-platform `recommend-skills.py` entry point and a stable recommendation envelope schema (`3.0.0`)
+- changed deep refreshes to reuse unchanged classifications and reclassify only added or modified sources
+- constrained legacy manifest entries to configured skill roots and retained failed classifications in the freshness manifest
+- added multi-label setup requirements, route-scoped memory isolation, and repeated multi-root installer arguments
+- added Linux and macOS Python regression jobs alongside the Windows PowerShell suite
+
 All notable changes to this project will be documented in this file.
 
 ## Unreleased

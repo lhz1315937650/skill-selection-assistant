@@ -21,6 +21,7 @@ $skillRoot = Join-Path $repoRoot "tests\fixtures\skills"
 $scanScript = Join-Path $repoRoot "skill-selection-assistant\scripts\scan-local-skills.ps1"
 $inferScript = Join-Path $repoRoot "skill-selection-assistant\scripts\infer-route.ps1"
 $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.ps1"
+$pythonRecommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.py"
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
 $summarizeScript = Join-Path $repoRoot "skill-selection-assistant\scripts\summarize-index.py"
@@ -71,7 +72,7 @@ try {
   Assert-True ([int]$deepMetadata.classified_files -eq 13) "deep classifier should classify every fixture SKILL.md"
   Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
   Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
-  Assert-True ($deepMetadata.schema_version -eq "2.3.0") "deep classifier should expose portable source-manifest schema"
+  Assert-True ($deepMetadata.schema_version -eq "2.4.0") "deep classifier should expose portable source-manifest schema"
   Assert-True ($deepMetadata.multi_label_facets -eq $true) "deep classifier should enable multi-label facets"
   Assert-True ($deepMetadata.detailed_function_profiles -eq $true) "deep classifier should generate detailed function profiles"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\facets.json")) "deep classifier should generate facet index"
@@ -83,6 +84,8 @@ try {
   Assert-True ($docsOnly.setup_level -eq "none") "incidental setup wording should not create a runtime requirement"
   Assert-True (-not (@($docsOnly.domain_detail) -contains "skill-management")) "generic references to this skill should not imply skill management"
   Assert-True ($explicitApi.setup_level -eq "api-key") "explicit API-key prerequisites should remain detectable"
+  Assert-True (@($explicitApi.setup_requirements) -contains "api-key") "explicit setup requirements should include API keys"
+  Assert-True (@($explicitApi.setup_requirements) -contains "local-runtime") "one skill should support multiple setup requirement labels"
 
   $secondaryRoot = Join-Path $outputRoot "secondary-skills"
   $secondarySkillDir = Join-Path $secondaryRoot "secondary-helper"
@@ -153,7 +156,16 @@ try {
 
   $deepRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir | Out-String | ConvertFrom-Json)
   Assert-True ($deepRecommendation.engine -eq "deep_hospital") "the one-command recommender should prefer the deep hospital router"
+  Assert-True ($deepRecommendation.schema_version -eq "3.0.0") "the unified recommendation envelope should declare its schema"
+  Assert-True ($deepRecommendation.mode -eq $deepRecommendation.deep_route.mode) "top-level mode should mirror the deep route result"
+  Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "branches") "the unified envelope should expose branches at top level"
+  Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "candidates") "the unified envelope should expose candidates at top level"
   Assert-True (@("choose_category", "choose_skill") -contains $deepRecommendation.deep_route.mode) "deep recommendation should return the next hospital-routing step"
+
+  Assert-True (Test-Path -LiteralPath $pythonRecommendScript) "cross-platform recommend-skills.py should exist"
+  $pythonRecommendation = (& python $pythonRecommendScript --query "build a beautiful frontend UI" --index-dir $indexDir --skills-root $skillRoot --limit 3 | Out-String | ConvertFrom-Json)
+  Assert-True ($pythonRecommendation.schema_version -eq "3.0.0") "Python recommender should use the stable recommendation envelope"
+  Assert-True ($pythonRecommendation.engine -eq "deep_hospital") "Python recommender should use the deep hospital router"
 
   $recommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($recommendation.route.route_type -eq "adaptive_leaf") "recommendation should use adaptive leaf route"
@@ -222,6 +234,9 @@ try {
   Assert-True ($refreshedDeepRecommendation.engine -eq "deep_hospital") "default recommendation should rebuild and use a stale deep index"
   Assert-True ($refreshedDeepRecommendation.index.refreshed -eq $true) "deep recommendation should report a source-manifest refresh"
   Assert-True ($refreshedDeepRecommendation.deep_route.mode -ne "index_stale") "default recommendation should not expose stale deep results after rebuilding"
+  $incrementalMetadata = Read-Json -Path (Join-Path $freshnessIndexDir "deep\metadata.json")
+  Assert-True ([int]$incrementalMetadata.reclassified_files -eq 1) "adding one skill should classify only the new source"
+  Assert-True ([int]$incrementalMetadata.reused_files -eq 13) "adding one skill should reuse all unchanged deep classifications"
 
   Assert-True (Test-Path -LiteralPath $memoryScript) "record-selection-memory.ps1 should exist"
   $memoryResult = (& $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType "domain_detail" -Category "frontend-web" -IndexDir $indexDir | Out-String | ConvertFrom-Json)
@@ -267,8 +282,10 @@ try {
   Assert-True ($pythonInstallResult.status -eq "installed") "install-skill.py should report installed"
   Assert-True (Test-Path -LiteralPath (Join-Path $pythonInstallDest "SKILL.md")) "Python installer should copy SKILL.md"
   $pythonDeepInstallDest = Join-Path $outputRoot "python-deep-installed\skills\skill-selection-assistant"
-  $pythonDeepInstallResult = (& python $pythonInstallScript --destination $pythonDeepInstallDest --skills-root $skillRoot --force | Out-String | ConvertFrom-Json)
+  $pythonDeepInstallResult = (& python $pythonInstallScript --destination $pythonDeepInstallDest --skills-root $skillRoot --skills-root $secondaryRoot --force | Out-String | ConvertFrom-Json)
   Assert-True ($pythonDeepInstallResult.deep_index_ran -eq $true) "Python installer should build the exhaustive deep index by default"
+  Assert-True (@($pythonDeepInstallResult.skills_roots).Count -eq 2) "Python installer should preserve multiple configured roots"
+  Assert-True ([int]$pythonDeepInstallResult.deep_index_metadata.raw_files -eq 14) "Python installer deep index should include every configured root"
   Assert-True (Test-Path -LiteralPath (Join-Path $pythonDeepInstallDest ".skill-index\deep\source-manifest.json")) "Python installer should publish deep source freshness data"
 
   $selfOnlyRoot = Join-Path $outputRoot "self-only\skills"
@@ -307,6 +324,8 @@ try {
     Assert-True ($deepClassifyEntries.Count -eq 1) "package zip should include deep-classify-skills.py"
     $deepRouteEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*deep-route.py" })
     Assert-True ($deepRouteEntries.Count -eq 1) "package zip should include deep-route.py"
+    $pythonRecommendEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*recommend-skills.py" })
+    Assert-True ($pythonRecommendEntries.Count -eq 1) "package zip should include recommend-skills.py"
   }
   finally {
     $archive.Dispose()

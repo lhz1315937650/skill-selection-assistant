@@ -8,3 +8,4 @@ description: Query a private service; requires an API key before this skill can 
 ## Requirements
 
 Set `EXAMPLE_API_KEY` before calling the service.
+Install the local client first with `pip install example-private-client`.

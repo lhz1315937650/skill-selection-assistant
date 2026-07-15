@@ -1,7 +1,7 @@
 param(
   [string]$CodexHome = "",
   [string]$Destination = "",
-  [string]$SkillsRoot = "",
+  [string[]]$SkillsRoot = @(),
   [switch]$SkipScan,
   [switch]$SkipDeepIndex,
   [switch]$Force
@@ -50,14 +50,15 @@ foreach ($item in @("SKILL.md", "agents", "rules", "scripts")) {
 $scanResult = $null
 $summaryResult = $null
 $deepResult = $null
+$resolvedSkillsRoots = @($SkillsRoot | Where-Object { $_ })
 if (-not $SkipScan) {
   $scanScript = Join-Path $Destination "scripts\scan-local-skills.ps1"
   if (-not (Test-Path -LiteralPath $scanScript)) {
     throw "Installed scanner not found: $scanScript"
   }
 
-  if ($SkillsRoot) {
-    $scanResult = & $scanScript -SkillsRoot $SkillsRoot
+  if ($SkillsRoot.Count -gt 0) {
+    $scanResult = & $scanScript -SkillsRoot $SkillsRoot[0]
   }
   else {
     $scanResult = & $scanScript
@@ -80,9 +81,18 @@ if (-not $SkipScan) {
   if ((-not $SkipDeepIndex) -and $python) {
     $deepScript = Join-Path $Destination "scripts\deep-classify-skills.py"
     $indexDir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
-    $resolvedSkillsRoot = $(if ($scanResult) { $scanResult.SkillsRoot } else { $SkillsRoot })
-    if ((Test-Path -LiteralPath $deepScript) -and $resolvedSkillsRoot) {
-      & $python.Source $deepScript --skills-root $resolvedSkillsRoot --index-dir $indexDir | Out-Null
+    if ($resolvedSkillsRoots.Count -eq 0 -and $scanResult) {
+      $resolvedSkillsRoots = @([string]$scanResult.SkillsRoot)
+      $agentsSkills = Join-Path (Join-Path $HOME ".agents") "skills"
+      if (Test-Path -LiteralPath $agentsSkills -PathType Container) {
+        $resolvedSkillsRoots += $agentsSkills
+      }
+    }
+    if ((Test-Path -LiteralPath $deepScript) -and $resolvedSkillsRoots.Count -gt 0) {
+      $deepArgs = @($deepScript)
+      foreach ($root in $resolvedSkillsRoots) { $deepArgs += @("--skills-root", $root) }
+      $deepArgs += @("--index-dir", $indexDir)
+      & $python.Source @deepArgs | Out-Null
       if ($LASTEXITCODE -eq 0) {
         $deepMetadataPath = Join-Path $indexDir "deep\metadata.json"
         $deepResult = [pscustomobject]@{
@@ -106,6 +116,7 @@ if (-not $SkipScan) {
   summary = $summaryResult
   deep_index_ran = $(if ($deepResult) { $deepResult.deep_index_ran } else { $false })
   deep_index = $deepResult
-  skills_root = $(if ($scanResult) { $scanResult.SkillsRoot } else { $SkillsRoot })
+  skills_root = $(if ($scanResult) { $scanResult.SkillsRoot } elseif ($SkillsRoot.Count -gt 0) { $SkillsRoot[0] } else { "" })
+  skills_roots = @($resolvedSkillsRoots)
   index_dir = $(if ($scanResult) { $scanResult.OutputDir } else { Join-Path $Destination ".skill-index" })
 } | ConvertTo-Json -Depth 6

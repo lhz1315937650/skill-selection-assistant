@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2.3.0"
+SCHEMA_VERSION = "2.4.0"
 DEFAULT_LEAF_TARGET = 24
 MAX_TAGS = {
     "domain_detail": 6,
@@ -126,7 +126,7 @@ ZH_LABELS = {
 
 
 def log(message: str) -> None:
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", file=sys.stderr, flush=True)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -275,17 +275,18 @@ def setup_evidence(description: str, body: str) -> str:
     return f"{explicit_description}\n" + "\n".join(selected)
 
 
-def infer_setup(description: str, body: str) -> str:
+def infer_setup_requirements(description: str, body: str) -> list[str]:
     lowered = setup_evidence(description, body).lower()
+    requirements: list[str] = []
     if re.search(r"api[- ]?key|secret key|access token|credentials?|[a-z][a-z0-9_]+_(?:api_)?key|密钥|令牌", lowered):
-        return "api-key"
+        requirements.append("api-key")
     if re.search(r"oauth|sign[ -]?in|log[ -]?in|account|workspace selection|账号|登录", lowered):
-        return "account"
+        requirements.append("account")
     if re.search(r"download|internet access|network access|clone |curl |wget |联网|下载", lowered):
-        return "network"
+        requirements.append("network")
     if re.search(r"npm install|pnpm install|pip install|install dependencies|docker|runtime|toolchain|安装依赖|运行环境", lowered):
-        return "local-runtime"
-    return "none"
+        requirements.append("local-runtime")
+    return requirements or ["none"]
 
 
 def classify_document(
@@ -338,7 +339,8 @@ def classify_document(
     primary_map = rules.get("primary_map", {})
     primary_domains = list(dict.fromkeys(str(primary_map.get(value) or "general") for value in detail))
     primary_domain = primary_domains[0]
-    setup_level = infer_setup(description, body)
+    setup_requirements = infer_setup_requirements(description, body)
+    setup_level = setup_requirements[0]
     route = {
         "primary_domain": primary_domain,
         "primary_domains": primary_domains,
@@ -349,7 +351,7 @@ def classify_document(
         "output_type": outputs[0],
         "setup_level": setup_level,
     }
-    capability_tags = list(dict.fromkeys(detail + specialty + tasks + outputs + tech + [setup_level]))
+    capability_tags = list(dict.fromkeys(detail + specialty + tasks + outputs + tech + setup_requirements))
     stat = path.stat()
     relative = str(manifest_entry.get("relative_path") or path.parent.name)
     origin = str(manifest_entry.get("origin") or "user-local")
@@ -372,6 +374,7 @@ def classify_document(
         "output_type": outputs,
         "tech_stack": tech,
         "setup_level": setup_level,
+        "setup_requirements": setup_requirements,
         "capability_tags": capability_tags,
         "primary_route": route,
         "classification_evidence": {
@@ -390,6 +393,7 @@ def classify_document(
             "technology_labels": tech,
             "output_labels": outputs,
             "setup_requirement": setup_level,
+            "setup_requirements": setup_requirements,
             "section_outline": headings_list,
         },
         "origin": origin,
@@ -445,25 +449,26 @@ def discover_files(
     excluded_paths: set[str],
 ) -> list[tuple[Path, dict[str, Any]]]:
     by_path: dict[str, tuple[Path, dict[str, Any]]] = {}
+    manifest_by_path: dict[str, dict[str, Any]] = {}
     for entry in manifest.get("files", []):
         path = Path(str(entry.get("skill_md") or ""))
         key = os.path.normcase(str(path.resolve())) if path.is_file() else ""
-        if key and key not in excluded_paths:
-            by_path[key] = (path.resolve(), dict(entry))
+        if not key or key in excluded_paths:
+            continue
+        if any(path.resolve().is_relative_to(root) for root in skills_roots):
+            manifest_by_path[key] = dict(entry)
     for root in skills_roots:
         for candidate in root.rglob("SKILL.md"):
             resolved = candidate.resolve()
             key = os.path.normcase(str(resolved))
             if key in excluded_paths:
                 continue
-            by_path.setdefault(key, (
-                resolved,
-                {
+            entry = manifest_by_path.get(key) or {
                     "relative_path": str(resolved.parent.relative_to(root)),
                     "origin": infer_origin(root, resolved),
                     "skills_root": str(root),
-                },
-            ))
+                }
+            by_path[key] = (resolved, entry)
     return sorted(by_path.values(), key=lambda item: str(item[0]).lower())
 
 
@@ -496,7 +501,7 @@ def facet_values(item: dict[str, Any], level: str) -> list[str]:
     if level == "primary_domain":
         return list(item.get("primary_domains") or [item.get("primary_domain") or "general"])
     if level == "setup_level":
-        return [str(item.get("setup_level") or "none")]
+        return list(item.get("setup_requirements") or [str(item.get("setup_level") or "none")])
     values = item.get(level) or []
     if isinstance(values, str):
         values = [values]
@@ -534,6 +539,7 @@ def compact_route_card(item: dict[str, Any]) -> dict[str, Any]:
         "tech_stack": item["tech_stack"],
         "output_type": item["output_type"],
         "setup_level": item["setup_level"],
+        "setup_requirements": item.get("setup_requirements") or [item["setup_level"]],
         "capability_tags": item["capability_tags"],
         "origin": item["origin"],
         "skill_md": item["skill_md"],
@@ -699,7 +705,12 @@ def main() -> int:
     parser.add_argument("--skill-dir", default="")
     parser.add_argument("--index-dir", default="")
     parser.add_argument("--leaf-target", type=int, default=DEFAULT_LEAF_TARGET)
-    parser.add_argument("--reuse-existing", action="store_true", help="Reuse the last full-body classification and rebuild hierarchy/output files only.")
+    parser.add_argument(
+        "--reuse-existing",
+        action="store_true",
+        help="Deprecated compatibility flag. Incremental reuse is now enabled by default.",
+    )
+    parser.add_argument("--full-rebuild", action="store_true", help="Disable incremental reuse and classify every discovered file again.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -723,34 +734,114 @@ def main() -> int:
     }
     items: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
+    source_files: list[dict[str, Any]] = []
     reused_generated_at = ""
+    reused_count = 0
+    reclassified_count = 0
     existing_deep = index_dir / "deep"
-    if args.reuse_existing:
-        existing_metadata = load_json(existing_deep / "metadata.json")
-        reused_generated_at = str(existing_metadata.get("generated_at") or "")
-        with (existing_deep / "skills-deep-index.ndjson").open("r", encoding="utf-8-sig") as handle:
-            items = [json.loads(line) for line in handle if line.strip()]
-        for item in items:
-            if not item.get("primary_domains"):
-                profile_domains = (item.get("functional_profile") or {}).get("primary_domains") or []
-                route_domains = (item.get("primary_route") or {}).get("primary_domains") or []
-                item["primary_domains"] = list(profile_domains or route_domains or [item.get("primary_domain") or "general"])
-        failures = load_json(existing_deep / "failures.json")
-        log(f"Reusing {len(items)} fully classified records from {reused_generated_at}")
-        files_count = len(items)
-    else:
-        excluded_paths = {os.path.normcase(str((skill_dir / "SKILL.md").resolve()))}
-        files = discover_files(skills_roots, manifest, excluded_paths)
-        files_count = len(files)
-        log(f"Discovered {len(files)} SKILL.md files; reading every file in full")
-        for index, (path, entry) in enumerate(files, 1):
+    rules_fingerprint = hashlib.sha256(rules_path.read_bytes()).hexdigest()
+    classifier_fingerprint = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    existing_metadata: dict[str, Any] = {}
+    existing_items: dict[str, dict[str, Any]] = {}
+    existing_sources: dict[str, dict[str, Any]] = {}
+
+    def path_key(value: str | Path) -> str:
+        return os.path.normcase(str(Path(value).expanduser().resolve()))
+
+    incremental_compatible = False
+    required_existing = [
+        existing_deep / "metadata.json",
+        existing_deep / "source-manifest.json",
+        existing_deep / "skills-deep-index.ndjson",
+    ]
+    if not args.full_rebuild and all(path.exists() for path in required_existing):
+        try:
+            existing_metadata = load_json(required_existing[0])
+            existing_manifest = load_json(required_existing[1])
+            with required_existing[2].open("r", encoding="utf-8-sig") as handle:
+                old_items = [json.loads(line) for line in handle if line.strip()]
+            existing_items = {path_key(item["skill_md"]): item for item in old_items if item.get("skill_md")}
+            existing_sources = {
+                path_key(entry["skill_md"]): entry
+                for entry in existing_manifest.get("files", [])
+                if entry.get("skill_md")
+            }
+            incremental_compatible = (
+                existing_metadata.get("schema_version") == SCHEMA_VERSION
+                and existing_metadata.get("rules_fingerprint") == rules_fingerprint
+                and existing_metadata.get("classifier_fingerprint") == classifier_fingerprint
+            )
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            incremental_compatible = False
+
+    excluded_paths = {os.path.normcase(str((skill_dir / "SKILL.md").resolve()))}
+    files = discover_files(skills_roots, manifest, excluded_paths)
+    files_count = len(files)
+    current_keys = {path_key(path) for path, _ in files}
+    previous_keys = set(existing_sources) | set(existing_items)
+    removed_count = len(previous_keys - current_keys)
+    log(
+        f"Discovered {files_count} SKILL.md files; "
+        f"incremental_reuse={'enabled' if incremental_compatible else 'disabled'}"
+    )
+    for index, (path, entry) in enumerate(files, 1):
+        key = path_key(path)
+        stat = path.stat()
+        old_source = existing_sources.get(key, {})
+        old_item = existing_items.get(key)
+        unchanged = (
+            incremental_compatible
+            and old_item is not None
+            and old_source.get("classification_status", "success") == "success"
+            and int(old_source.get("file_length", -1)) == stat.st_size
+            and int(old_source.get("last_write_ns", -1)) == stat.st_mtime_ns
+        )
+        if unchanged:
+            if not old_item.get("primary_domains"):
+                profile_domains = (old_item.get("functional_profile") or {}).get("primary_domains") or []
+                route_domains = (old_item.get("primary_route") or {}).get("primary_domains") or []
+                old_item["primary_domains"] = list(profile_domains or route_domains or [old_item.get("primary_domain") or "general"])
+            items.append(old_item)
+            source_files.append({
+                "skill_md": str(path),
+                "file_length": stat.st_size,
+                "last_write_ns": stat.st_mtime_ns,
+                "content_hash": old_source.get("content_hash") or old_item.get("content_hash", ""),
+                "classification_status": "success",
+            })
+            reused_count += 1
+        else:
+            reclassified_count += 1
+            document: str | None = None
             try:
-                text = path.read_text(encoding="utf-8-sig", errors="replace")
-                items.append(classify_document(text, path, entry, rules, compiled_rules))
-            except Exception as exc:  # keep a complete audit trail
-                failures.append({"skill_md": str(path), "error": str(exc)})
-            if index % 250 == 0 or index == len(files):
-                log(f"Read and classified {index}/{len(files)} files; failures={len(failures)}")
+                document = path.read_text(encoding="utf-8-sig", errors="replace")
+                item = classify_document(document, path, entry, rules, compiled_rules)
+                items.append(item)
+                source_files.append({
+                    "skill_md": str(path),
+                    "file_length": stat.st_size,
+                    "last_write_ns": stat.st_mtime_ns,
+                    "content_hash": item["content_hash"],
+                    "classification_status": "success",
+                })
+            except Exception as exc:  # keep every discovered source in the audit trail
+                failure = {"skill_md": str(path), "error": str(exc)}
+                failures.append(failure)
+                source_files.append({
+                    "skill_md": str(path),
+                    "file_length": stat.st_size,
+                    "last_write_ns": stat.st_mtime_ns,
+                    "content_hash": hashlib.sha256(document.encode("utf-8")).hexdigest() if document is not None else "",
+                    "classification_status": "failed",
+                    "classification_error": str(exc),
+                })
+        if index % 250 == 0 or index == files_count:
+            log(
+                f"Processed {index}/{files_count}; reused={reused_count}, "
+                f"reclassified={reclassified_count}, failures={len(failures)}"
+            )
+    if reused_count:
+        reused_generated_at = str(existing_metadata.get("generated_at") or "")
 
     representatives = annotate_duplicates(items)
     cards = {item["skill_id"]: item for item in representatives}
@@ -772,15 +863,6 @@ def main() -> int:
     robust_remove(temp_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now().isoformat(timespec="seconds")
-    source_files = [
-        {
-            "skill_md": item["skill_md"],
-            "file_length": item["file_length"],
-            "last_write_ns": Path(item["skill_md"]).stat().st_mtime_ns,
-            "content_hash": item["content_hash"],
-        }
-        for item in items
-    ]
     source_snapshot = hashlib.sha256(
         "\n".join(
             f"{entry['skill_md']}|{entry['file_length']}|{entry['last_write_ns']}"
@@ -796,18 +878,24 @@ def main() -> int:
         "skill_instance_dir": str(skill_dir),
         "source_snapshot": source_snapshot,
         "rules_path": str(rules_path.resolve()),
-        "rules_fingerprint": hashlib.sha256(rules_path.read_bytes()).hexdigest(),
+        "rules_fingerprint": rules_fingerprint,
         "classifier_path": str(Path(__file__).resolve()),
-        "classifier_fingerprint": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "classifier_fingerprint": classifier_fingerprint,
         "raw_files": files_count,
         "classified_files": len(items),
         "unique_content_candidates": len(representatives),
         "failures": len(failures),
         "levels": LEVELS,
         "leaf_target": args.leaf_target,
-        "full_body_read": True,
+        "full_body_read": reclassified_count == files_count,
+        "all_records_derived_from_full_body": True,
         "adaptive_catalog_shards": adaptive_shards,
         "classification_reused_from": reused_generated_at,
+        "incremental_reuse_enabled": incremental_compatible,
+        "reused_files": reused_count,
+        "reclassified_files": reclassified_count,
+        "removed_files": removed_count,
+        "failed_files": len(failures),
         "multi_label_facets": True,
         "detailed_function_profiles": True,
     }

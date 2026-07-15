@@ -202,14 +202,20 @@ if (-not $Legacy) {
       $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     }
     [pscustomobject]@{
+      schema_version = "3.0.0"
       query = $Query
       engine = "deep_hospital"
+      mode = $deepResult.mode
       index = [pscustomobject]@{
         refreshed = ($deepWasRefreshed -or (-not [string]::IsNullOrWhiteSpace($indexRefreshReason)))
         refresh_reason = $indexRefreshReason
         skills_root = $manifestForDeep.skills_root
+        skills_roots = @($deepRoots)
         scope = "installing-user-local-skills-exhaustive"
       }
+      route = $deepResult.current
+      branches = @($deepResult.branches)
+      candidates = @($deepResult.candidates)
       deep_route = $deepResult
       next_step = $(switch ($deepResult.mode) {
         "choose_category" { "Present only the returned branches, ask the user to choose one, then call recommend-skills.ps1 again with its exact -Path." }
@@ -274,11 +280,15 @@ if (-not $route.available) {
 
   if (-not $fallback) {
     [pscustomobject]@{
+      schema_version = "3.0.0"
       query = $Query
+      engine = "legacy_shortlist"
+      mode = "choose_skill"
       index = [pscustomobject]@{
         refreshed = (-not [string]::IsNullOrWhiteSpace($indexRefreshReason))
         refresh_reason = $indexRefreshReason
         skills_root = $summary.skills_root
+        skills_roots = @($summary.skills_root)
         scope = $summary.index_scope
       }
       route = $originalRoute
@@ -302,6 +312,8 @@ if (-not $route.available) {
         used = $false
         reason = "No route files are available. Re-run scan-local-skills.ps1 and confirm the skills root contains installed skills."
       }
+      branches = @()
+      candidates = @()
       next_step = "Tell the user no local skill match is available yet, then offer to answer directly or install/create a relevant skill."
     } | ConvertTo-Json -Depth 12
     exit 0
@@ -333,12 +345,15 @@ else {
 }
 
 [pscustomobject]@{
+  schema_version = "3.0.0"
   query = $Query
   engine = "legacy_shortlist"
+  mode = "choose_skill"
   index = [pscustomobject]@{
     refreshed = (-not [string]::IsNullOrWhiteSpace($indexRefreshReason))
     refresh_reason = $indexRefreshReason
     skills_root = $summary.skills_root
+    skills_roots = @($summary.skills_root)
     scope = $summary.index_scope
   }
   route = [pscustomobject]@{
@@ -363,5 +378,7 @@ else {
     used = (-not [string]::IsNullOrWhiteSpace($fallbackReason))
     reason = $fallbackReason
   }
+  branches = @()
+  candidates = @($selection.candidates)
   next_step = "Recommend candidates according to the returned recommendation_policy. Keep explanations concise, then read only the chosen SKILL.md and optionally run record-selection-memory.ps1 to update local selection memory."
 } | ConvertTo-Json -Depth 12

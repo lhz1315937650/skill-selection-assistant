@@ -117,11 +117,19 @@ powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/scan-
 
 ## 推荐技能示例
 
-你可以用下面命令测试一次技能推荐：
+推荐使用跨平台 Python 入口测试技能推荐；它不依赖 PowerShell，并返回统一的 `3.0.0` 输出协议：
+
+```bash
+python skill-selection-assistant/scripts/recommend-skills.py --query "帮我做一个前端页面"
+```
+
+Windows / PowerShell 也可以使用等价入口：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/recommend-skills.ps1 -Query "帮我做一个前端页面"
 ```
+
+深层索引首次构建会全文读取安装者当前配置目录下的每个 `SKILL.md`。后续刷新默认只重新分类新增或修改的文件，并复用未变化的分类；只有显式传入 `--full-rebuild` 才执行全量重建。来源清单会保留分类失败的文件，避免索引刚生成就被误判为过期。安装器和分类器都支持重复传入多个 skills 根目录。
 
 推荐结果应当遵循三个原则：
 

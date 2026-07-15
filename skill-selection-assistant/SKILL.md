@@ -209,7 +209,7 @@ Do not describe or implement offline indexing as scanning a hardcoded personal d
 
 When this skill is installed, updated, or used in a fresh environment, build a local skill index before recommending skills.
 
-Build the compact compatibility index, then the exhaustive per-user deep index:
+Build the compact compatibility index when PowerShell is available, then the exhaustive per-user deep index:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/scan-local-skills.ps1
@@ -235,7 +235,7 @@ The scanner output should keep `SkillInstanceDir` and `SkillsRoot` separate so u
 
 The scanner and route inference should load shared classification rules from `rules/categories.json`. Do not hardcode publisher-specific skill names, local counts, or local paths into those rules.
 
-If the index is missing, stale, or clearly incomplete, rebuild it before making recommendations.
+If the index is missing, stale, or clearly incomplete, refresh it before making recommendations. Compatible deep indexes reuse unchanged classifications and read only added or modified `SKILL.md` files. Use `--full-rebuild` only for an explicit complete reclassification.
 
 For first-install diagnostics or a broken local index, run:
 
@@ -249,11 +249,11 @@ The generated index is a recommendation view, not a destructive filesystem opera
 
 Do not read every local skill before recommendation. Always use a route-first workflow:
 
-`scripts/recommend-skills.ps1` is the single preferred entry point. It builds or refreshes the per-user index when needed and defaults to the hospital-style deep router. The compact legacy recommender is a compatibility fallback only.
+`scripts/recommend-skills.py` is the preferred cross-platform entry point. It builds or incrementally refreshes the per-user deep index when needed and returns schema `3.0.0`. `scripts/recommend-skills.ps1` exposes the same top-level envelope on PowerShell and retains the compact legacy recommender as a compatibility fallback.
 
-1. Run `scripts/recommend-skills.ps1` with the user's request.
-2. For `deep_route.mode=choose_category`, present only the returned branches and continue with the chosen branch's exact `-Path`.
-3. For `deep_route.mode=choose_skill`, present the compact final candidates and read only the selected `SKILL.md`.
+1. Run `python scripts/recommend-skills.py --query "<user request>"` with the user's request.
+2. For `mode=choose_category`, present only the returned `branches` and continue with the chosen branch's exact `--path`.
+3. For `mode=choose_skill`, present the compact top-level `candidates` and read only the selected `SKILL.md`.
 4. If the deep runtime is unavailable, use `-Legacy` or run `scripts/infer-route.ps1` and `scripts/select-route-candidates.ps1`.
 5. If scripts are unavailable, read only `.skill-index/route-summary.md` or `.skill-index/route-summary.json`.
 6. Choose the smallest reliable legacy shortlist only when deep routing is unavailable.
@@ -263,6 +263,13 @@ Do not read every local skill before recommendation. Always use a route-first wo
 10. Never load a complete index or catalog into model context during ordinary selection.
 
 Selector command pattern:
+
+```bash
+python scripts/recommend-skills.py --query "<user request>"
+python scripts/recommend-skills.py --query "<user request>" --path "primary_domain=coding|domain_detail=frontend-web"
+```
+
+PowerShell-compatible pattern:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "<user request>"
@@ -287,7 +294,7 @@ Build or refresh the exhaustive index after skills are installed, removed, renam
 python scripts/deep-classify-skills.py --skills-root "<root one>" --skills-root "<root two>" --leaf-target 24
 ```
 
-This builder must read every discovered `SKILL.md` in full, preserve an audit record for every installed path, assign multiple domain/specialty/task/output/technology tags, and publish the result atomically under `.skill-index/deep/`. It must never copy or modify the indexed skills.
+On the first build or an explicit `--full-rebuild`, this builder reads every discovered `SKILL.md` in full. Compatible later builds reuse unchanged records and reclassify only added or modified sources. It preserves an audit record for every discovered path, including failed classifications, assigns multiple domain/specialty/task/output/technology/setup tags, and publishes atomically under `.skill-index/deep/`. It never copies or modifies indexed skills.
 
 For a new request, start at the total reception desk:
 
@@ -322,7 +329,8 @@ Classify each local skill using:
 - `domain_detail`: fine-grained weighted labels such as `frontend-web`, `backend-api`, `academic-research`, `visual-design`, `publishing-social`, `document-processing`, `automation-integration`, or `testing-debugging`
 - `task_type`: practical action such as `summarize`, `review`, `generate`, `transform`, `test-debug`, `extract`, `publish`, `plan`, or `analyze`
 - `output_type`: likely output such as `markdown`, `image`, `pptx`, `docx`, `xlsx`, `html`, `code`, `report`, or `workflow`
-- `setup_level`: `none`, `local-runtime`, `network`, `account`, `api-key`, or `unknown`
+- `setup_requirements`: zero or more of `local-runtime`, `network`, `account`, and `api-key`; use `none` only when no explicit requirement is detected
+- `setup_level`: the primary compatibility label retained for older consumers
 - `status`: `active`, `needs-review`, `deprecated`, or `unknown`
 - `duplicate_count`: how many same-name local entries were merged into this recommendation candidate
 - `duplicate_name_count`: how many local entries shared this skill name before variant-aware deduplication
@@ -339,7 +347,7 @@ At the beginning of a normal project conversation:
 
 1. Detect the user's language.
 2. Summarize the current request internally.
-3. Run `scripts/recommend-skills.ps1`; follow its `deep_route.mode` and exact branch paths.
+3. Run `scripts/recommend-skills.py`; follow its top-level `mode` and exact branch paths. Use `recommend-skills.ps1` when PowerShell compatibility is needed.
 4. Use legacy inference and shortlists only when the deep runtime is unavailable.
 5. Load `.skill-index/route-summary.md` or `.skill-index/route-summary.json` only if route inference is unavailable.
 6. Read only the matching shortlist file if the selector is unavailable.
