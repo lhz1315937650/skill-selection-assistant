@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/lhz1315937650/skill-selection-assistant/schemas/recommendation-v3.schema.json",
+  "title": "Skill Selection Recommendation Envelope",
+  "type": "object",
+  "required": ["schema_version", "query", "engine", "mode", "index", "route", "branches", "candidates", "next_step"],
+  "properties": {
+    "schema_version": { "const": "3.0.0" },
+    "query": { "type": "string" },
+    "engine": { "enum": ["deep_hospital", "legacy_shortlist"] },
+    "mode": { "enum": ["choose_category", "choose_skill", "no_skills_installed", "index_stale", "error"] },
+    "index": { "type": "object" },
+    "route": { "type": "object" },
+    "branches": { "type": "array", "items": { "type": "object" } },
+    "candidates": { "type": "array", "items": { "type": "object" } },
+    "next_step": { "type": "string" },
+    "error": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": {
+        "type": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
+    "deep_route": { "type": "object", "deprecated": true }
+  },
+  "additionalProperties": true
+}

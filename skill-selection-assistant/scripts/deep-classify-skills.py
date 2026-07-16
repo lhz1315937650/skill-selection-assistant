@@ -14,12 +14,13 @@ import shutil
 import sys
 import time
 from collections import Counter, defaultdict
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2.4.0"
+SCHEMA_VERSION = "2.5.0"
 DEFAULT_LEAF_TARGET = 24
 MAX_TAGS = {
     "domain_detail": 6,
@@ -399,6 +400,7 @@ def classify_document(
         "origin": origin,
         "relative_path": relative,
         "skill_md": str(path),
+        "logical_skill_md": str(manifest_entry.get("logical_skill_md") or path),
         "content_hash": content_hash,
         "file_length": stat.st_size,
         "last_write_time": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
@@ -433,7 +435,9 @@ def resolve_skill_roots(values: list[str]) -> list[Path]:
     return roots
 
 
-def infer_origin(root: Path, path: Path) -> str:
+def infer_origin(root: Path, path: Path, linked_external: bool = False) -> str:
+    if linked_external:
+        return "linked-external"
     relative_parts = {part.lower() for part in path.relative_to(root).parts}
     root_parts = {part.lower() for part in root.parts}
     if ".system" in relative_parts:
@@ -441,6 +445,19 @@ def infer_origin(root: Path, path: Path) -> str:
     if ".agents" in root_parts or "plugins" in root_parts:
         return "installed-topic"
     return "user-local"
+
+
+def path_uses_link(root: Path, path: Path) -> bool:
+    current = path
+    while current != root and current.is_relative_to(root):
+        try:
+            details = current.lstat()
+        except OSError:
+            return False
+        if current.is_symlink() or int(getattr(details, "st_file_attributes", 0)) & 0x400:
+            return True
+        current = current.parent
+    return False
 
 
 def discover_files(
@@ -459,14 +476,16 @@ def discover_files(
             manifest_by_path[key] = dict(entry)
     for root in skills_roots:
         for candidate in root.rglob("SKILL.md"):
+            logical = candidate.absolute()
             resolved = candidate.resolve()
             key = os.path.normcase(str(resolved))
             if key in excluded_paths:
                 continue
             entry = manifest_by_path.get(key) or {
-                    "relative_path": str(resolved.parent.relative_to(root)),
-                    "origin": infer_origin(root, resolved),
+                    "relative_path": str(logical.parent.relative_to(root)),
+                    "origin": infer_origin(root, logical, path_uses_link(root, logical)),
                     "skills_root": str(root),
+                    "logical_skill_md": str(logical),
                 }
             by_path[key] = (resolved, entry)
     return sorted(by_path.values(), key=lambda item: str(item[0]).lower())
@@ -543,6 +562,7 @@ def compact_route_card(item: dict[str, Any]) -> dict[str, Any]:
         "capability_tags": item["capability_tags"],
         "origin": item["origin"],
         "skill_md": item["skill_md"],
+        "logical_skill_md": item.get("logical_skill_md") or item["skill_md"],
         "exact_duplicate_count": item["exact_duplicate_count"],
         "variant_count": item["variant_count"],
     }
@@ -694,6 +714,36 @@ def robust_remove(path: Path) -> None:
     shutil.rmtree(path)
 
 
+@contextmanager
+def exclusive_publish_lock(lock_path: Path, timeout_seconds: float):
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    descriptor: int | None = None
+    while descriptor is None:
+        try:
+            descriptor = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                age = time.time() - lock_path.stat().st_mtime
+                if age > max(300.0, timeout_seconds * 2):
+                    lock_path.unlink()
+                    continue
+            except FileNotFoundError:
+                continue
+            if time.monotonic() - started >= timeout_seconds:
+                raise TimeoutError(f"Timed out waiting for deep-index publish lock: {lock_path}")
+            time.sleep(0.1)
+    os.write(descriptor, f"pid={os.getpid()}\n".encode("ascii"))
+    try:
+        yield
+    finally:
+        os.close(descriptor)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exhaustively classify every local SKILL.md into a deep hospital-style hierarchy.")
     parser.add_argument(
@@ -711,6 +761,8 @@ def main() -> int:
         help="Deprecated compatibility flag. Incremental reuse is now enabled by default.",
     )
     parser.add_argument("--full-rebuild", action="store_true", help="Disable incremental reuse and classify every discovered file again.")
+    parser.add_argument("--strict", action="store_true", help="Return a non-zero exit code when any source fails classification.")
+    parser.add_argument("--lock-timeout", type=float, default=120.0, help="Seconds to wait for another process publishing the same deep index.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -804,6 +856,7 @@ def main() -> int:
             items.append(old_item)
             source_files.append({
                 "skill_md": str(path),
+                "logical_skill_md": str(entry.get("logical_skill_md") or path),
                 "file_length": stat.st_size,
                 "last_write_ns": stat.st_mtime_ns,
                 "content_hash": old_source.get("content_hash") or old_item.get("content_hash", ""),
@@ -819,6 +872,7 @@ def main() -> int:
                 items.append(item)
                 source_files.append({
                     "skill_md": str(path),
+                    "logical_skill_md": str(entry.get("logical_skill_md") or path),
                     "file_length": stat.st_size,
                     "last_write_ns": stat.st_mtime_ns,
                     "content_hash": item["content_hash"],
@@ -829,6 +883,7 @@ def main() -> int:
                 failures.append(failure)
                 source_files.append({
                     "skill_md": str(path),
+                    "logical_skill_md": str(entry.get("logical_skill_md") or path),
                     "file_length": stat.st_size,
                     "last_write_ns": stat.st_mtime_ns,
                     "content_hash": hashlib.sha256(document.encode("utf-8")).hexdigest() if document is not None else "",
@@ -940,22 +995,24 @@ def main() -> int:
     write_hierarchy_markdown(temp_dir / "HOSPITAL_DIRECTORY.md", tree, cards, args.leaf_target)
     write_catalog(temp_dir / "DETAILED_SKILL_CATALOG.md", items)
     log("Deep files written; atomically replacing the previous deep index")
-    robust_remove(backup_dir)
-    moved_previous = False
-    try:
-        if final_dir.exists():
-            final_dir.rename(backup_dir)
-            moved_previous = True
-        temp_dir.rename(final_dir)
-    except Exception:
-        if moved_previous and backup_dir.exists() and not final_dir.exists():
-            backup_dir.rename(final_dir)
-        raise
-    else:
+    with exclusive_publish_lock(index_dir / ".deep-publish.lock", args.lock_timeout):
         robust_remove(backup_dir)
+        moved_previous = False
+        try:
+            if final_dir.exists():
+                final_dir.rename(backup_dir)
+                moved_previous = True
+            temp_dir.rename(final_dir)
+        except Exception:
+            if moved_previous and backup_dir.exists() and not final_dir.exists():
+                backup_dir.rename(final_dir)
+            raise
+        else:
+            robust_remove(backup_dir)
     log(f"Completed: raw={files_count}, classified={len(items)}, unique={len(representatives)}, failures={len(failures)}")
-    print(json.dumps({"status": "ok", **metadata, "output_dir": str(final_dir)}, ensure_ascii=False, indent=2))
-    return 0
+    build_status = "degraded" if failures else "ok"
+    print(json.dumps({"status": build_status, **metadata, "output_dir": str(final_dir)}, ensure_ascii=False, indent=2))
+    return 1 if args.strict and failures else 0
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ $inferScript = Join-Path $repoRoot "skill-selection-assistant\scripts\infer-rout
 $recommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.ps1"
 $pythonRecommendScript = Join-Path $repoRoot "skill-selection-assistant\scripts\recommend-skills.py"
 $memoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.ps1"
+$pythonMemoryScript = Join-Path $repoRoot "skill-selection-assistant\scripts\record-selection-memory.py"
 $doctorScript = Join-Path $repoRoot "skill-selection-assistant\scripts\doctor.ps1"
 $summarizeScript = Join-Path $repoRoot "skill-selection-assistant\scripts\summarize-index.py"
 $selfGrowScript = Join-Path $repoRoot "skill-selection-assistant\scripts\self-grow.py"
@@ -72,7 +73,7 @@ try {
   Assert-True ([int]$deepMetadata.classified_files -eq 13) "deep classifier should classify every fixture SKILL.md"
   Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
   Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
-  Assert-True ($deepMetadata.schema_version -eq "2.4.0") "deep classifier should expose portable source-manifest schema"
+  Assert-True ($deepMetadata.schema_version -eq "2.5.0") "deep classifier should expose portable source-manifest schema"
   Assert-True ($deepMetadata.multi_label_facets -eq $true) "deep classifier should enable multi-label facets"
   Assert-True ($deepMetadata.detailed_function_profiles -eq $true) "deep classifier should generate detailed function profiles"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\facets.json")) "deep classifier should generate facet index"
@@ -101,6 +102,12 @@ try {
   $multiRootMetadata = Read-Json -Path (Join-Path $multiRootIndex "deep\metadata.json")
   Assert-True (@($multiRootMetadata.skills_roots).Count -eq 2) "deep classifier should support multiple configured skill roots"
   Assert-True ([int]$multiRootMetadata.raw_files -eq 14) "multi-root discovery should include skills from every configured root"
+  $multiPowerShellIndex = Join-Path $outputRoot "multi-root-powershell-index"
+  & $scanScript -SkillsRoot $skillRoot -OutputDir $multiPowerShellIndex | Out-Null
+  $multiPowerShellRecommendation = (& $recommendScript -Query "use secondary helper" -IndexDir $multiPowerShellIndex -SkillsRoot @($skillRoot, $secondaryRoot) | Out-String | ConvertFrom-Json)
+  $multiPowerShellMetadata = Read-Json -Path (Join-Path $multiPowerShellIndex "deep\metadata.json")
+  Assert-True (@($multiPowerShellMetadata.skills_roots).Count -eq 2) "PowerShell recommender should accept multiple explicit skill roots"
+  Assert-True ([int]$multiPowerShellMetadata.raw_files -eq 14) "PowerShell recommender should rebuild when its explicit root set changes"
 
   $deepPath = ""
   $deepResult = $null
@@ -157,10 +164,10 @@ try {
   $deepRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir | Out-String | ConvertFrom-Json)
   Assert-True ($deepRecommendation.engine -eq "deep_hospital") "the one-command recommender should prefer the deep hospital router"
   Assert-True ($deepRecommendation.schema_version -eq "3.0.0") "the unified recommendation envelope should declare its schema"
-  Assert-True ($deepRecommendation.mode -eq $deepRecommendation.deep_route.mode) "top-level mode should mirror the deep route result"
+  Assert-True (-not ($deepRecommendation.PSObject.Properties.Name -contains "deep_route")) "default recommendation output should not duplicate the deep route payload"
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "branches") "the unified envelope should expose branches at top level"
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "candidates") "the unified envelope should expose candidates at top level"
-  Assert-True (@("choose_category", "choose_skill") -contains $deepRecommendation.deep_route.mode) "deep recommendation should return the next hospital-routing step"
+  Assert-True (@("choose_category", "choose_skill") -contains $deepRecommendation.mode) "deep recommendation should return the next hospital-routing step"
 
   Assert-True (Test-Path -LiteralPath $pythonRecommendScript) "cross-platform recommend-skills.py should exist"
   $pythonRecommendation = (& python $pythonRecommendScript --query "build a beautiful frontend UI" --index-dir $indexDir --skills-root $skillRoot --limit 3 | Out-String | ConvertFrom-Json)
@@ -233,7 +240,7 @@ try {
   $refreshedDeepRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot | Out-String | ConvertFrom-Json)
   Assert-True ($refreshedDeepRecommendation.engine -eq "deep_hospital") "default recommendation should rebuild and use a stale deep index"
   Assert-True ($refreshedDeepRecommendation.index.refreshed -eq $true) "deep recommendation should report a source-manifest refresh"
-  Assert-True ($refreshedDeepRecommendation.deep_route.mode -ne "index_stale") "default recommendation should not expose stale deep results after rebuilding"
+  Assert-True ($refreshedDeepRecommendation.mode -ne "index_stale") "default recommendation should not expose stale deep results after rebuilding"
   $incrementalMetadata = Read-Json -Path (Join-Path $freshnessIndexDir "deep\metadata.json")
   Assert-True ([int]$incrementalMetadata.reclassified_files -eq 1) "adding one skill should classify only the new source"
   Assert-True ([int]$incrementalMetadata.reused_files -eq 13) "adding one skill should reuse all unchanged deep classifications"
@@ -244,6 +251,9 @@ try {
   Assert-True (Test-Path -LiteralPath $memoryResult.memory) "selection memory should exist"
   $memoryText = Get-Content -LiteralPath $memoryResult.memory -Raw -Encoding UTF8
   Assert-True ($memoryText.Contains("frontend-design")) "selection memory should include selected skill"
+  Assert-True (-not $memoryText.Contains("build a beautiful frontend UI")) "selection memory should not store raw queries by default"
+  $pythonMemoryResult = (& python $pythonMemoryScript --query "private frontend request" --outcome selected --selected-skill frontend-design --route-type domain_detail --category frontend-web --index-dir $indexDir | Out-String | ConvertFrom-Json)
+  Assert-True ($pythonMemoryResult.query_stored -eq $false) "Python memory recorder should be privacy-first"
   $deepMemoryResult = (& python $deepRouteScript --query "build a beautiful frontend UI" --index-dir $indexDir --path $deepPath --limit 12 | Out-String | ConvertFrom-Json)
   $deepRememberedCandidate = @($deepMemoryResult.candidates | Where-Object { $_.name -eq "frontend-design" })[0]
   Assert-True ([int]$deepRememberedCandidate.memory_score -gt 0) "deep routing should apply bounded memory inside a compatible selected route"
@@ -268,9 +278,13 @@ try {
 
   Assert-True (Test-Path -LiteralPath $installScript) "install-skill.ps1 should exist"
   $installDest = Join-Path $outputRoot "installed\skills\skill-selection-assistant"
+  New-Item -ItemType Directory -Force -Path (Join-Path $installDest "scripts") | Out-Null
+  Set-Content -LiteralPath (Join-Path $installDest "scripts\obsolete.ps1") -Encoding UTF8 -Value "# obsolete"
   $installResult = (& $installScript -Destination $installDest -SkillsRoot $skillRoot -Force | Out-String | ConvertFrom-Json)
   Assert-True ($installResult.status -eq "installed") "install-skill.ps1 should report installed"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest "SKILL.md")) "installer should copy SKILL.md"
+  Assert-True (Test-Path -LiteralPath (Join-Path $installDest "VERSION")) "installer should copy the version marker"
+  Assert-True (-not (Test-Path -LiteralPath (Join-Path $installDest "scripts\obsolete.ps1"))) "PowerShell updates should remove obsolete managed files"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\route-summary.json")) "installer should run first scan"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\DETAILED_CLASSIFICATION.md")) "installer should generate classification summary"
   Assert-True ($installResult.deep_index_ran -eq $true) "installer should build the exhaustive per-user deep index by default"
@@ -278,11 +292,11 @@ try {
 
   Assert-True (Test-Path -LiteralPath $pythonInstallScript) "install-skill.py should exist"
   $pythonInstallDest = Join-Path $outputRoot "python-installed\skills\skill-selection-assistant"
-  $pythonInstallResult = (& python $pythonInstallScript --destination $pythonInstallDest --skills-root $skillRoot --skip-scan --force | Out-String | ConvertFrom-Json)
+  $pythonInstallResult = (& python $pythonInstallScript --destination $pythonInstallDest --skills-root $skillRoot --skip-scan --force --json | Out-String | ConvertFrom-Json)
   Assert-True ($pythonInstallResult.status -eq "installed") "install-skill.py should report installed"
   Assert-True (Test-Path -LiteralPath (Join-Path $pythonInstallDest "SKILL.md")) "Python installer should copy SKILL.md"
   $pythonDeepInstallDest = Join-Path $outputRoot "python-deep-installed\skills\skill-selection-assistant"
-  $pythonDeepInstallResult = (& python $pythonInstallScript --destination $pythonDeepInstallDest --skills-root $skillRoot --skills-root $secondaryRoot --force | Out-String | ConvertFrom-Json)
+  $pythonDeepInstallResult = (& python $pythonInstallScript --destination $pythonDeepInstallDest --skills-root $skillRoot --skills-root $secondaryRoot --force --json | Out-String | ConvertFrom-Json)
   Assert-True ($pythonDeepInstallResult.deep_index_ran -eq $true) "Python installer should build the exhaustive deep index by default"
   Assert-True (@($pythonDeepInstallResult.skills_roots).Count -eq 2) "Python installer should preserve multiple configured roots"
   Assert-True ([int]$pythonDeepInstallResult.deep_index_metadata.raw_files -eq 14) "Python installer deep index should include every configured root"
@@ -308,7 +322,7 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   $archive = [System.IO.Compression.ZipFile]::OpenRead($packageResult.Zip)
   try {
-    $artifactEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-index*" -or $_.FullName -like "dist/*" })
+    $artifactEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-index*" -or $_.FullName -like "dist/*" -or $_.FullName -like "*__pycache__*" -or $_.FullName -like "*.pyc" })
     Assert-True ($artifactEntries.Count -eq 0) "package zip should exclude local artifacts"
     $zhReadmeEntries = @($archive.Entries | Where-Object { $_.FullName -eq "README.zh-CN.md" })
     Assert-True ($zhReadmeEntries.Count -eq 1) "package zip should include README.zh-CN.md"
@@ -326,6 +340,16 @@ try {
     Assert-True ($deepRouteEntries.Count -eq 1) "package zip should include deep-route.py"
     $pythonRecommendEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*recommend-skills.py" })
     Assert-True ($pythonRecommendEntries.Count -eq 1) "package zip should include recommend-skills.py"
+    $pythonMemoryEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*record-selection-memory.py" })
+    Assert-True ($pythonMemoryEntries.Count -eq 1) "package zip should include record-selection-memory.py"
+    $pythonDoctorEntries = @($archive.Entries | Where-Object { $_.FullName -like "*skill-selection-assistant*scripts*doctor.py" })
+    Assert-True ($pythonDoctorEntries.Count -eq 1) "package zip should include doctor.py"
+    $versionEntries = @($archive.Entries | Where-Object { ($_.FullName -replace "\\", "/") -eq "skill-selection-assistant/VERSION" })
+    Assert-True ($versionEntries.Count -eq 1) "package zip should include the installed version marker"
+    $referenceEntries = @($archive.Entries | Where-Object { ($_.FullName -replace "\\", "/") -like "skill-selection-assistant/references/*.md" })
+    Assert-True ($referenceEntries.Count -eq 3) "package zip should include progressive-disclosure references"
+    $schemaEntries = @($archive.Entries | Where-Object { ($_.FullName -replace "\\", "/") -eq "skill-selection-assistant/schemas/recommendation-v3.schema.json" })
+    Assert-True ($schemaEntries.Count -eq 1) "package zip should include the recommendation JSON schema"
   }
   finally {
     $archive.Dispose()

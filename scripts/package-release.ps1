@@ -40,12 +40,20 @@ try {
   $skillSrc = Join-Path $repoRoot "skill-selection-assistant"
   $skillDest = Join-Path $temp "skill-selection-assistant"
   New-Item -ItemType Directory -Force -Path $skillDest | Out-Null
-  foreach ($item in @("SKILL.md", "agents", "rules", "scripts")) {
+  foreach ($item in @("SKILL.md", "VERSION", "agents", "references", "rules", "schemas", "scripts")) {
     $src = Join-Path $skillSrc $item
     if (Test-Path -LiteralPath $src) {
       Copy-Item -LiteralPath $src -Destination $skillDest -Recurse -Force
     }
   }
+
+  $tempResolved = [IO.Path]::GetFullPath($temp)
+  Get-ChildItem -LiteralPath $temp -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -eq "__pycache__" -and $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) } |
+    Remove-Item -Recurse -Force
+  Get-ChildItem -LiteralPath $temp -File -Recurse -Force -Filter "*.pyc" -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) } |
+    Remove-Item -Force
 
   Compress-Archive -Path (Join-Path $temp "*") -DestinationPath $zip -Force
 
@@ -54,7 +62,9 @@ try {
   try {
     $forbidden = @($archive.Entries | Where-Object {
       $_.FullName -like "*skill-index*" -or
-      $_.FullName -like "dist/*"
+      $_.FullName -like "dist/*" -or
+      $_.FullName -like "*__pycache__*" -or
+      $_.FullName -like "*.pyc"
     })
     if ($forbidden.Count -gt 0) {
       throw "Release package contains forbidden local artifacts: " + (($forbidden | Select-Object -First 5 -ExpandProperty FullName) -join ", ")

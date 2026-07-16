@@ -9,7 +9,8 @@ param(
   [string]$RouteType = "",
   [string]$Category = "",
   [string]$Notes = "",
-  [string]$IndexDir = ""
+  [string]$IndexDir = "",
+  [switch]$StoreQuery
 )
 
 $ErrorActionPreference = "Stop"
@@ -57,7 +58,7 @@ $entry.Add("")
 $entry.Add("### $timestamp")
 $entry.Add("")
 $entry.Add(('- outcome: `{0}`' -f $Outcome))
-$entry.Add("- query: " + (Get-ShortText -Text $Query))
+$entry.Add("- query: " + $(if ($StoreQuery) { Get-ShortText -Text $Query } else { "[not stored]" }))
 if (-not [string]::IsNullOrWhiteSpace($SelectedSkill)) {
   $entry.Add(('- selected_skill: `{0}`' -f $SelectedSkill))
 }
@@ -76,5 +77,6 @@ Add-Content -LiteralPath $memoryPath -Encoding UTF8 -Value $entry
   selected_skill = $SelectedSkill
   route_type = $RouteType
   category = $Category
+  query_stored = [bool]$StoreQuery
   memory = $memoryPath
 } | ConvertTo-Json -Depth 4

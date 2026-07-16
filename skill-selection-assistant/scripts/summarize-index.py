@@ -183,7 +183,7 @@ def main() -> int:
         [
             "## Routing Tips",
             "",
-            "- Prefer `scripts/recommend-skills.ps1 -Query \"...\"` for normal use.",
+            "- Prefer `python scripts/recommend-skills.py --query \"...\" --compact` for normal use.",
             "- If recommendations are too sparse, lower `-MinRelevanceScore` or increase `-ScoreWindow`.",
             "- If recommendations are noisy, raise `-MinRelevanceScore` or lower `-ScoreWindow`.",
             "- Read shortlists first; use full routes only for audits or deep debugging.",

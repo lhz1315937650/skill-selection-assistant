@@ -50,6 +50,9 @@ def main() -> int:
     parser.add_argument("--leaf-target", type=int, default=0)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--full-rebuild", action="store_true")
+    parser.add_argument("--compat", action="store_true", help="Include the deprecated nested deep_route object.")
+    parser.add_argument("--compact", action="store_true", help="Emit compact JSON for lower token and logging overhead.")
+    parser.add_argument("--debug", action="store_true", help="Show Python tracebacks for unexpected failures.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -113,6 +116,7 @@ def main() -> int:
     next_step = {
         "choose_category": "Present only the returned branches, ask the user to choose one, then call this script again with its exact --path.",
         "choose_skill": "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md.",
+        "no_skills_installed": "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill.",
     }.get(mode, str(deep_result.get("instruction") or ""))
     output = {
         "schema_version": SCHEMA_VERSION,
@@ -122,6 +126,8 @@ def main() -> int:
         "index": {
             "refreshed": refreshed,
             "refresh_reason": refresh_reason,
+            "status": "degraded" if int(metadata.get("failed_files") or 0) else "ok",
+            "failed_files": int(metadata.get("failed_files") or 0),
             "skills_root": (metadata.get("skills_roots") or roots or [""])[0],
             "skills_roots": metadata.get("skills_roots", roots),
             "scope": metadata.get("index_scope", "installing-user-local-skills-exhaustive"),
@@ -129,12 +135,46 @@ def main() -> int:
         "route": deep_result.get("current", {}),
         "branches": deep_result.get("branches", []),
         "candidates": deep_result.get("candidates", []),
-        "deep_route": deep_result,
         "next_step": next_step,
     }
-    print(json.dumps(output, ensure_ascii=False, indent=2))
+    if args.compat:
+        output["deep_route"] = deep_result
+    print(json.dumps(
+        output,
+        ensure_ascii=False,
+        indent=None if args.compact else 2,
+        separators=(",", ":") if args.compact else None,
+    ))
     return 0
 
 
+def cli() -> int:
+    try:
+        return main()
+    except Exception as exc:
+        if "--debug" in sys.argv:
+            raise
+        compact = "--compact" in sys.argv
+        query = ""
+        if "--query" in sys.argv:
+            index = sys.argv.index("--query")
+            if index + 1 < len(sys.argv):
+                query = sys.argv[index + 1]
+        output = {
+            "schema_version": SCHEMA_VERSION,
+            "query": query,
+            "engine": "deep_hospital",
+            "mode": "error",
+            "index": {},
+            "route": {},
+            "branches": [],
+            "candidates": [],
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+            "next_step": "Check the configured roots, index directory, and route path. Re-run with --debug only for maintenance.",
+        }
+        print(json.dumps(output, ensure_ascii=False, indent=None if compact else 2, separators=(",", ":") if compact else None))
+        return 1
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(cli())

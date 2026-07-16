@@ -337,7 +337,22 @@ def run_facet_route(
     leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
     candidate_ids, selected, shards = parse_facet_path(args.path, facets, cards, leaf_target)
     if not candidate_ids:
-        raise ValueError("The selected multi-label facets have no skills in common")
+        return {
+            "mode": "no_skills_installed",
+            "selection_model": "multi_label_facet_intersection",
+            "query": args.query,
+            "current": {
+                "candidate_count": 0,
+                "selected_facets": selected,
+                "catalog_shards": [],
+                "path": args.path,
+            },
+            "candidate_pool": 0,
+            "content_variant_pool": 0,
+            "returned_candidates": 0,
+            "candidates": [],
+            "instruction": "No installed local skills are available. Offer to answer directly, install a skill, or create a new skill.",
+        }
 
     raw_query_tokens = tokens(args.query)
     query_tokens = expand_query_tokens(args.query, keywords)
@@ -481,6 +496,7 @@ def run_facet_route(
             "setup_requirements": item.get("setup_requirements") or [item.get("setup_level", "unknown")],
             "origin": item.get("origin", "unknown"),
             "skill_md": item.get("skill_md", ""),
+            "logical_skill_md": item.get("logical_skill_md") or item.get("skill_md", ""),
             "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
             "score": entry["score"],
         }
@@ -601,6 +617,7 @@ def main() -> int:
                     "setup_requirements": item.get("setup_requirements") or [item["setup_level"]],
                     "origin": item["origin"],
                     "skill_md": item["skill_md"],
+                    "logical_skill_md": item.get("logical_skill_md") or item["skill_md"],
                     "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
                     "score": skill_score(item, query_tokens, raw_query_tokens),
                 }

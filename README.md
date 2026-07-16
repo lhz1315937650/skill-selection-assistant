@@ -202,9 +202,11 @@ The intended default is route-first selection:
 
 After the user chooses a skill or reports a missed match, record the feedback locally:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/record-selection-memory.ps1 -Query "build a frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType domain_detail -Category frontend-web
+```bash
+python skill-selection-assistant/scripts/record-selection-memory.py --query "build a frontend UI" --outcome selected --selected-skill "frontend-design" --route-type domain_detail --category frontend-web
 ```
+
+Raw queries are not stored unless `--store-query` is explicitly requested.
 
 ## Example Flow
 
@@ -276,9 +278,18 @@ skill-selection-assistant/
 |       `-- smoke-tests.yml
 `-- skill-selection-assistant/
     |-- SKILL.md
+    |-- VERSION
+    |-- references/
+    |   |-- INSTALLATION.md
+    |   |-- CLASSIFICATION.md
+    |   `-- SELF_GROWTH.md
+    |-- schemas/
+    |   `-- recommendation-v3.schema.json
     |-- scripts/
+    |   |-- doctor.py
     |   |-- doctor.ps1
     |   |-- infer-route.ps1
+    |   |-- record-selection-memory.py
     |   |-- record-selection-memory.ps1
     |   |-- recommend-skills.py
     |   |-- recommend-skills.ps1
@@ -293,10 +304,21 @@ skill-selection-assistant/
 
 ## Install
 
-Recommended cross-platform quick install:
+Requirements:
+
+- Python 3.10 or newer (`python3` on many Linux/macOS systems, `py -3` on some Windows systems)
+- PowerShell is optional; without it, deep Python routing still works and only legacy reports are skipped
+
+Clone or download the repository, open its root directory, and run the cross-platform installer:
 
 ```bash
 python scripts/install-skill.py
+```
+
+Preview the exact destination, skill roots, and discovered file count without writing anything:
+
+```bash
+python scripts/install-skill.py --dry-run
 ```
 
 On Windows, the PowerShell installer is also supported:
@@ -305,7 +327,7 @@ On Windows, the PowerShell installer is also supported:
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
-This copies the router skill, runs the compact compatibility scan, and builds the exhaustive per-user deep index. Re-run with `-Force` when updating an existing installation.
+This copies the router skill, optionally runs the compact compatibility scan, builds the exhaustive per-user deep index, and performs a first recommendation health check. Human-readable output is the default; add `--json` for automation.
 
 After the first scan, the installer also tries to generate `.skill-index/DETAILED_CLASSIFICATION.md`, `.skill-index/detailed-classification.json`, and `.skill-index/domain-task-matrix.csv`.
 
@@ -315,9 +337,26 @@ For Python installs, use `--force` when updating, `--skip-scan` to copy only, or
 python scripts/install-skill.py --force
 python scripts/install-skill.py --skip-scan
 python scripts/install-skill.py --skip-deep-index
+python scripts/install-skill.py --check
 ```
 
-After installation, you can diagnose the local setup:
+Installing the folder does not automatically authorize global instruction changes. To opt in to running skill selection before normal requests, install with:
+
+```bash
+python scripts/install-skill.py --configure-agents
+```
+
+This appends a bounded managed block to the resolved global `AGENTS.md` and preserves unrelated instructions. Without this flag, the installer only reports the activation step.
+
+The cross-platform health check is:
+
+```bash
+python scripts/install-skill.py --check
+```
+
+From the installed skill directory, `python scripts/doctor.py` provides the same portable runtime check without keeping the downloaded repository.
+
+PowerShell users can also run the extended legacy diagnostic:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
@@ -364,14 +403,14 @@ The smoke test uses a tiny fixture skill library and verifies:
 - default hospital-style recommendation with exact `-Path` continuation
 - multi-root exhaustive discovery and source-manifest freshness checks
 - explicit-requirement setup detection that ignores incidental documentation examples
-- local self-growth memory recording through `record-selection-memory.ps1`
+- privacy-first cross-platform self-growth memory recording through `record-selection-memory.py`
 - first-time install diagnostics and optional index repair through `doctor.ps1 -Fix`
 
 The same smoke test also runs in GitHub Actions on `main` pushes, pull requests, and manual workflow dispatch.
 
 ## Recommended AGENTS.md Rule
 
-If you want this skill to run before normal requests, add a global instruction in your `AGENTS.md` telling Codex to:
+If you do not use the installer's explicit `--configure-agents` option, add a global instruction in your `AGENTS.md` telling Codex to:
 
 1. inspect the local skills directory
 2. use `skill-selection-assistant` first

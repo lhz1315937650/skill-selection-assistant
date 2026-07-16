@@ -8,12 +8,14 @@ param(
   [int]$ScoreWindow = 3,
   [int]$MinRelevanceScore = 3,
   [string]$IndexDir = "",
-  [string]$SkillsRoot = "",
+  [string[]]$SkillsRoot = @(),
   [string]$Path = "",
-  [switch]$Legacy
+  [switch]$Legacy,
+  [switch]$Compat
 )
 
 $ErrorActionPreference = "Stop"
+$PrimarySkillsRoot = $(if ($SkillsRoot.Count -gt 0) { [string]$SkillsRoot[0] } else { "" })
 
 if (-not $IndexDir) {
   $skillDir = Split-Path -Parent $PSScriptRoot
@@ -139,7 +141,7 @@ $needsScan = (-not (Test-Path -LiteralPath $summaryPath))
 if ($needsScan) {
   $indexRefreshReason = "index_missing"
 }
-elseif (Test-LocalIndexStale -ManifestPath $manifestPath -ExplicitSkillsRoot $SkillsRoot -RouterSkillPath $routerSkillPath) {
+elseif (Test-LocalIndexStale -ManifestPath $manifestPath -ExplicitSkillsRoot $PrimarySkillsRoot -RouterSkillPath $routerSkillPath) {
   $needsScan = $true
   $indexRefreshReason = "local_skill_library_changed"
 }
@@ -148,8 +150,8 @@ if ($needsScan) {
   if (-not (Test-Path -LiteralPath $scanScript)) {
     throw "The local skill index is missing or stale and the scanner is unavailable: $scanScript"
   }
-  if ($SkillsRoot) {
-    & $scanScript -SkillsRoot $SkillsRoot -OutputDir $IndexDir | Out-Null
+  if ($PrimarySkillsRoot) {
+    & $scanScript -SkillsRoot $PrimarySkillsRoot -OutputDir $IndexDir | Out-Null
   }
   else {
     & $scanScript -OutputDir $IndexDir | Out-Null
@@ -165,23 +167,30 @@ if (-not $Legacy) {
   $deepMetadataPath = Join-Path $IndexDir "deep\metadata.json"
   if ($python -and (Test-Path -LiteralPath $deepBuildScript) -and (Test-Path -LiteralPath $deepRouteScript)) {
     $manifestForDeep = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    $deepRoot = $(if ($SkillsRoot) { $SkillsRoot } else { [string]$manifestForDeep.skills_root })
-    $deepRoots = @($deepRoot)
-    if ((-not $SkillsRoot) -and (Test-Path -LiteralPath $deepMetadataPath)) {
+    $deepRoots = $(if ($SkillsRoot.Count -gt 0) { @($SkillsRoot) } else { @([string]$manifestForDeep.skills_root) })
+    $deepRootsChanged = $false
+    if (Test-Path -LiteralPath $deepMetadataPath) {
       try {
         $existingDeepMetadata = Get-Content -LiteralPath $deepMetadataPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if (@($existingDeepMetadata.skills_roots).Count -gt 0) {
-          $deepRoots = @($existingDeepMetadata.skills_roots | ForEach-Object { [string]$_ } | Where-Object { $_ })
+        $existingDeepRoots = @($existingDeepMetadata.skills_roots | ForEach-Object { [string]$_ } | Where-Object { $_ })
+        if (($SkillsRoot.Count -eq 0) -and $existingDeepRoots.Count -gt 0) {
+          $deepRoots = $existingDeepRoots
+        }
+        elseif ($SkillsRoot.Count -gt 0) {
+          $requestedNormalized = @($deepRoots | ForEach-Object { (Get-Item -LiteralPath $_).FullName } | Sort-Object -Unique)
+          $existingNormalized = @($existingDeepRoots | ForEach-Object { (Get-Item -LiteralPath $_).FullName } | Sort-Object -Unique)
+          $deepRootsChanged = (@(Compare-Object -ReferenceObject $existingNormalized -DifferenceObject $requestedNormalized).Count -gt 0)
         }
       }
       catch {
-        $deepRoots = @($deepRoot)
+        $deepRootsChanged = ($SkillsRoot.Count -gt 0)
       }
     }
     $deepBuildArgs = @($deepBuildScript)
     foreach ($root in $deepRoots) { $deepBuildArgs += @("--skills-root", $root) }
     $deepBuildArgs += @("--index-dir", $IndexDir)
-    $shouldBuildDeep = $needsScan -or (-not (Test-Path -LiteralPath $deepMetadataPath))
+    $shouldBuildDeep = $needsScan -or $deepRootsChanged -or (-not (Test-Path -LiteralPath $deepMetadataPath))
+    if ($deepRootsChanged -and [string]::IsNullOrWhiteSpace($indexRefreshReason)) { $indexRefreshReason = "skills_roots_changed" }
     $deepWasRefreshed = $shouldBuildDeep
     if ($shouldBuildDeep) {
       & $python.Source @deepBuildArgs | Out-Null
@@ -201,7 +210,7 @@ if (-not $Legacy) {
       $deepWasRefreshed = $true
       $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     }
-    [pscustomobject]@{
+    $deepEnvelope = [ordered]@{
       schema_version = "3.0.0"
       query = $Query
       engine = "deep_hospital"
@@ -216,13 +225,15 @@ if (-not $Legacy) {
       route = $deepResult.current
       branches = @($deepResult.branches)
       candidates = @($deepResult.candidates)
-      deep_route = $deepResult
       next_step = $(switch ($deepResult.mode) {
         "choose_category" { "Present only the returned branches, ask the user to choose one, then call recommend-skills.ps1 again with its exact -Path." }
         "choose_skill" { "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md." }
+        "no_skills_installed" { "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill." }
         default { [string]$deepResult.instruction }
       })
-    } | ConvertTo-Json -Depth 14
+    }
+    if ($Compat) { $deepEnvelope.deep_route = $deepResult }
+    [pscustomobject]$deepEnvelope | ConvertTo-Json -Depth 14
     exit 0
   }
 }

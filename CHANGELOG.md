@@ -1,18 +1,21 @@
 # Changelog
 
-## Unreleased
+All notable changes to this project will be documented in this file.
 
+## v1.7.0 - 2026-07-15
+
+- added first-install planning, human-readable summaries, structured errors, version reporting, health checks, and opt-in managed `AGENTS.md` activation
+- fixed custom `--codex-home` installs scanning the wrong default root and made empty skill libraries a supported routing state
+- added cross-process deep-index publication locking and logical/resolved path handling for symlinked or junction-backed skills
+- removed duplicated deep recommendation payloads by default, added compact output, and retained opt-in `--compat` output
+- added cross-platform privacy-first selection-memory recording and split the runtime skill instructions into progressively loaded references
 - added a cross-platform `recommend-skills.py` entry point and a stable recommendation envelope schema (`3.0.0`)
 - changed deep refreshes to reuse unchanged classifications and reclassify only added or modified sources
 - constrained legacy manifest entries to configured skill roots and retained failed classifications in the freshness manifest
 - added multi-label setup requirements, route-scoped memory isolation, and repeated multi-root installer arguments
 - added Linux and macOS Python regression jobs alongside the Windows PowerShell suite
 
-All notable changes to this project will be documented in this file.
-
-## Unreleased
-
-- upgraded deep routing to schema 2.2 with true multi-label facet intersection, allowing one skill to be reached through multiple primary domains, detailed domains, specialties, tasks, technologies, and outputs
+- upgraded deep routing to schema 2.5 with true multi-label facet intersection, incremental provenance, linked-skill paths, and failure-aware source manifests
 - added structured function profiles and a much more detailed human-readable catalog while keeping those audit fields out of ordinary recommendation context
 - added compact route cards, dynamic branch windows, compact matched-tag candidate output, non-reducing facet skipping, and early stopping when the request has no evidence for another classification axis
 - kept alphabetical catalog shards as an explicit audit option instead of forcing irrelevant category choices during normal low-token selection

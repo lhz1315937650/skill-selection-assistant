@@ -61,10 +61,21 @@ python scripts/deep-route.py --query "用 Anime.js 制作前端动画"
 
 ## 推荐安装方式
 
-推荐跨平台安装方式：
+环境要求：
+
+- Python 3.10 或更高版本；Linux/macOS 可能需要使用 `python3`，Windows 也可以使用 `py -3`
+- PowerShell 是可选项；缺少 PowerShell 时，Python 深层索引和推荐仍可正常工作，只跳过旧版兼容报告
+
+克隆或下载仓库并进入仓库根目录后，运行：
 
 ```bash
 python scripts/install-skill.py
+```
+
+安装前可以先查看将要使用的目录和预计技能数量，不写入任何文件：
+
+```bash
+python scripts/install-skill.py --dry-run
 ```
 
 Windows 用户也可以继续使用 PowerShell 安装脚本：
@@ -73,7 +84,7 @@ Windows 用户也可以继续使用 PowerShell 安装脚本：
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
-它会把 `skill-selection-assistant/` 安装到你的 Codex skills 目录，并自动执行第一次本地扫描。已有安装时，可以加 `-Force` 更新路由器 skill，同时保留本地运行时索引。
+它会安装路由器、构建本机深层索引并执行第一次推荐自检。默认输出面向用户的简短摘要；自动化程序可以添加 `--json`。已有安装时，Python 安装器使用 `--force` 更新，同时保留本地运行时索引。
 
 首次扫描后，安装器会尽量生成 `.skill-index/DETAILED_CLASSIFICATION.md`、`.skill-index/detailed-classification.json` 和 `.skill-index/domain-task-matrix.csv`，方便用户直接查看本机 skill 的详细分类分布。
 
@@ -85,9 +96,26 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 python scripts/install-skill.py --force
 python scripts/install-skill.py --skip-scan
 python scripts/install-skill.py --skip-deep-index
+python scripts/install-skill.py --check
 ```
 
-安装后，可以运行诊断脚本检查本地设置：
+仅安装 skill 文件夹不会自动获得修改全局指令的权限。如需让它在普通请求前自动执行 skill 选择，请明确使用：
+
+```bash
+python scripts/install-skill.py --configure-agents
+```
+
+该参数只会追加一个有边界标记的托管区块，并保留 `AGENTS.md` 中其他指令。不传此参数时，安装器只显示启用提示，不会修改全局配置。
+
+安装后的跨平台自检命令：
+
+```bash
+python scripts/install-skill.py --check
+```
+
+进入已安装的 skill 目录后，也可以直接运行 `python scripts/doctor.py`，不需要保留下载的仓库。
+
+PowerShell 用户还可以运行扩展兼容诊断：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/doctor.ps1 -Fix
@@ -169,11 +197,11 @@ Skill Selection Assistant 的自增长不是自动替用户乱改技能，而是
 
 当用户选择了某个 skill，或者发现推荐不准时，可以把这次反馈记录到本地记忆：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File skill-selection-assistant/scripts/record-selection-memory.ps1 -Query "帮我做一个前端页面" -Outcome selected -SelectedSkill "frontend-design" -RouteType domain_detail -Category frontend-web
+```bash
+python skill-selection-assistant/scripts/record-selection-memory.py --query "帮我做一个前端页面" --outcome selected --selected-skill "frontend-design" --route-type domain_detail --category frontend-web
 ```
 
-这份本地记忆会参与后续排序：经常被选择的 skill 会被适度加权，经常被拒绝或安装失败的 skill 会被降权，从而减少重复错配和无效 token 消耗。
+默认不会保存用户原始请求；只有显式添加 `--store-query` 才保留缩短后的请求文本。这份本地记忆会参与后续兼容路线内的排序，从而减少重复错配和无效 token 消耗。
 
 ## 开发与发布检查
 

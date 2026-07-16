@@ -21,6 +21,8 @@ FIXTURES = REPO / "tests" / "fixtures" / "skills"
 CLASSIFIER = SKILL_DIR / "scripts" / "deep-classify-skills.py"
 ROUTER = SKILL_DIR / "scripts" / "deep-route.py"
 RECOMMENDER = SKILL_DIR / "scripts" / "recommend-skills.py"
+INSTALLER = REPO / "scripts" / "install-skill.py"
+AGENTS_MARKER_START = "<!-- skill-selection-assistant:start -->"
 
 
 def assert_true(condition: bool, message: str) -> None:
@@ -64,7 +66,7 @@ def test_routing_and_incremental(temp: Path) -> None:
     index = temp / "index"
     shutil.copytree(FIXTURES, root)
     first = build(root, index)
-    assert_true(first["schema_version"] == "2.4.0", "deep schema should be 2.4.0")
+    assert_true(first["schema_version"] == "2.5.0", "deep schema should be 2.5.0")
     assert_true(first["reclassified_files"] == 13 and first["reused_files"] == 0, "first build should classify all files")
 
     explicit = next(json.loads(line) for line in (index / "deep" / "skills-deep-index.ndjson").read_text(encoding="utf-8").splitlines() if '"explicit-api-client"' in line)
@@ -94,8 +96,19 @@ def test_routing_and_incremental(temp: Path) -> None:
             break
         path = result["branches"][0]["path"]
     assert_true(result["schema_version"] == "3.0.0", "unified recommender should expose an explicit schema")
+    assert_true("deep_route" not in result, "default recommendation output should not duplicate the deep route payload")
     assert_true(result["mode"] == "choose_skill", "router should reach a skill shortlist")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
+    compatible = run_json(command + ["--compat"])
+    assert_true("deep_route" in compatible, "legacy consumers should be able to request the nested deep route payload")
+    invalid = subprocess.run(
+        [sys.executable, str(RECOMMENDER), "--query", "invalid path", "--index-dir", str(index), "--path", "unknown=missing", "--compact"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    invalid_result = json.loads(invalid.stdout)
+    assert_true(invalid.returncode == 1 and invalid_result["mode"] == "error" and not invalid.stderr, "expected routing errors should be structured without tracebacks")
 
     target = root / "frontend-design" / "SKILL.md"
     target.write_text(target.read_text(encoding="utf-8") + "\nIncremental change.\n", encoding="utf-8")
@@ -159,11 +172,13 @@ def test_failure_manifest_and_memory_scope(temp: Path) -> None:
     classifier.classify_document = fail_bad
     old_argv = sys.argv
     sys.argv = [str(CLASSIFIER), "--skills-root", str(root), "--skill-dir", str(SKILL_DIR), "--index-dir", str(index)]
+    captured = io.StringIO()
     try:
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(io.StringIO()):
             assert_true(classifier.main() == 0, "failure-aware build should complete with an audit trail")
     finally:
         sys.argv = old_argv
+    assert_true(json.loads(captured.getvalue())["status"] == "degraded", "partial classification should be reported as degraded")
     source = json.loads((index / "deep" / "source-manifest.json").read_text(encoding="utf-8"))
     statuses = {Path(item["skill_md"]).parent.name: item["classification_status"] for item in source["files"]}
     assert_true(statuses == {"bad": "failed", "good": "success"}, "failed sources must remain in the source manifest")
@@ -179,12 +194,115 @@ def test_failure_manifest_and_memory_scope(temp: Path) -> None:
     assert_true(router.load_selection_memory(index, {"domain_detail": "frontend-web"}).get("frontend-design", 0) > 0, "matching route memory should still apply")
 
 
+def test_linked_skill_and_concurrent_publish(temp: Path) -> None:
+    root = temp / "linked-root"
+    external = temp / "external"
+    logical = root / "linked-skill"
+    logical.mkdir(parents=True)
+    external.mkdir(parents=True)
+    external_file = external / "external-SKILL.md"
+    external_file.write_text("---\nname: linked-external\ndescription: A linked external skill.\n---\n", encoding="utf-8")
+    try:
+        (logical / "SKILL.md").symlink_to(external_file)
+    except OSError:
+        return
+    index = temp / "linked-index"
+    linked = build(root, index)
+    assert_true(linked["raw_files"] == 1, "a linked skill file should be classified")
+    item = json.loads((index / "deep" / "skills-deep-index.ndjson").read_text(encoding="utf-8").strip())
+    assert_true(item["origin"] == "linked-external", "linked skills should retain explicit provenance")
+    assert_true(Path(item["logical_skill_md"]).parent.name == "linked-skill", "linked skills should retain their logical entry path")
+
+    processes = [
+        subprocess.Popen(
+            [
+                sys.executable,
+                str(CLASSIFIER),
+                "--skills-root",
+                str(root),
+                "--skill-dir",
+                str(SKILL_DIR),
+                "--index-dir",
+                str(index),
+                "--full-rebuild",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for _ in range(4)
+    ]
+    results = [process.communicate(timeout=60) + (process.returncode,) for process in processes]
+    assert_true(all(result[2] == 0 for result in results), f"concurrent publishers should all succeed: {results}")
+    assert_true(json.loads((index / "deep" / "metadata.json").read_text(encoding="utf-8"))["raw_files"] == 1, "concurrent publishing should leave a readable index")
+
+
+def test_first_install_experience(temp: Path) -> None:
+    codex_home = temp / "custom-codex-home"
+    skills = codex_home / "skills"
+    shutil.copytree(FIXTURES / "frontend-design", skills / "frontend-design")
+    installed = run_json([
+        sys.executable,
+        str(INSTALLER),
+        "--codex-home",
+        str(codex_home),
+        "--configure-agents",
+        "--json",
+    ])
+    assert_true(installed["status"] == "installed" and installed["health_status"] == "ok", "first install should finish with a health check")
+    if shutil.which("pwsh") or shutil.which("powershell"):
+        assert_true(installed["scan_ran"] and installed["RawTotal"] == 1, "PowerShell scanner output should be parsed as structured JSON")
+        assert_true("scanner_stdout" not in installed, "successful scanner output should not leak a formatted PowerShell table")
+    assert_true(installed["deep_index_metadata"]["raw_files"] == 1, "--codex-home should scan its own skills directory")
+    assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
+    assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
+    assert_true(installed["version"] == "1.7.0", "installer should report the installed version")
+    installed_dir = codex_home / "skills" / "skill-selection-assistant"
+    memory = run_json([
+        sys.executable,
+        str(installed_dir / "scripts" / "record-selection-memory.py"),
+        "--query",
+        "private first-install request",
+        "--outcome",
+        "selected",
+        "--selected-skill",
+        "frontend-design",
+    ])
+    assert_true(not memory["query_stored"], "cross-platform memory should not retain raw queries by default")
+    assert_true("private first-install request" not in Path(memory["memory"]).read_text(encoding="utf-8"), "private query text leaked into selection memory")
+    doctor = run_json([sys.executable, str(installed_dir / "scripts" / "doctor.py")])
+    assert_true(doctor["status"] == "ok" and doctor["recommendation_exit_code"] == 0, "the installed Python doctor should work after the repository is removed")
+
+    repeated = subprocess.run(
+        [sys.executable, str(INSTALLER), "--codex-home", str(codex_home), "--json"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    repeated_error = json.loads(repeated.stdout)
+    assert_true(repeated.returncode == 1 and repeated_error["status"] == "error", "expected install conflicts should return structured errors without tracebacks")
+
+    empty_home = temp / "empty-codex-home"
+    empty = run_json([sys.executable, str(INSTALLER), "--codex-home", str(empty_home), "--json"])
+    assert_true(empty["health_mode"] == "no_skills_installed", "an empty first install should pass with a friendly no-skills mode")
+    recommendation = run_json([
+        sys.executable,
+        str(empty_home / "skills" / "skill-selection-assistant" / "scripts" / "recommend-skills.py"),
+        "--query",
+        "analyze data",
+        "--compact",
+    ])
+    assert_true(recommendation["mode"] == "no_skills_installed" and recommendation["candidates"] == [], "empty libraries must not raise a traceback")
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="skill-selection-python-smoke-") as value:
         temp = Path(value)
         test_routing_and_incremental(temp / "routing")
         test_manifest_scope(temp / "scope")
         test_failure_manifest_and_memory_scope(temp / "failure")
+        test_linked_skill_and_concurrent_publish(temp / "linked")
+        test_first_install_experience(temp / "install")
     print(json.dumps({"status": "passed", "platform": sys.platform}, indent=2))
     return 0
 

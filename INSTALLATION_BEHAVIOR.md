@@ -55,7 +55,9 @@ python scripts/install-skill.py
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
-The Python installer is the preferred cross-platform entry point. It copies the router skill on any platform with Python available. If PowerShell/pwsh is available, it can also run the first scan; otherwise, users can install first and scan later.
+The Python installer is the preferred cross-platform entry point and requires Python 3.10 or newer. It copies the router, builds the deep Python index, and runs a recommendation health check. If PowerShell/pwsh is available, it also builds compatibility reports; otherwise, normal deep recommendations remain fully available.
+
+An explicit `--codex-home` must also define the default scanned root as `<codex-home>/skills`. It must never silently fall back to another machine-default Codex home. Global `AGENTS.md` activation is opt-in through `--configure-agents` and must preserve unrelated instructions.
 
 After a successful scan, installers should try to run `skill-selection-assistant/scripts/summarize-index.py` to generate `DETAILED_CLASSIFICATION.md`, `detailed-classification.json`, and `domain-task-matrix.csv`. If Python is unavailable in the PowerShell installer path, summary generation may be skipped without blocking installation.
 

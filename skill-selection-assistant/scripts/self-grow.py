@@ -276,7 +276,7 @@ def main() -> int:
             "",
             "- 每次新增或删除本地 skill 后，先运行 `scan-local-skills.ps1 -IncludeFullRoutes`。",
             "- 每周运行一次 `self-grow.py`，查看是否有大分类需要拆分、重复 skill 需要合并、缺失 skill 需要创建。",
-            "- 推荐明显不准时，先用 `record-selection-memory.ps1` 记录 `missed`、`rejected` 或 `new-skill-needed`，再运行本报告。",
+            "- 推荐明显不准时，先用 `python scripts/record-selection-memory.py` 记录 `missed`、`rejected` 或 `new-skill-needed`，再运行本报告。",
             "",
         ]
     )

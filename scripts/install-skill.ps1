@@ -40,9 +40,13 @@ if ((Test-Path -LiteralPath $Destination) -and (-not $Force)) {
 }
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-foreach ($item in @("SKILL.md", "agents", "rules", "scripts")) {
+foreach ($item in @("SKILL.md", "VERSION", "agents", "references", "rules", "schemas", "scripts")) {
   $src = Join-Path $skillSource $item
   if (Test-Path -LiteralPath $src) {
+    $managedTarget = Join-Path $Destination $item
+    if (Test-Path -LiteralPath $managedTarget) {
+      Remove-Item -LiteralPath $managedTarget -Recurse -Force
+    }
     Copy-Item -LiteralPath $src -Destination $Destination -Recurse -Force
   }
 }
@@ -110,6 +114,7 @@ if (-not $SkipScan) {
 
 [pscustomobject]@{
   status = "installed"
+  version = $(if (Test-Path -LiteralPath (Join-Path $Destination "VERSION")) { (Get-Content -LiteralPath (Join-Path $Destination "VERSION") -Raw).Trim() } else { "development" })
   destination = (Resolve-Path -LiteralPath $Destination).Path
   scan_ran = (-not $SkipScan)
   summary_ran = $(if ($summaryResult) { $summaryResult.summary_ran } else { $false })

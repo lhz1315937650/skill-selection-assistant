@@ -1,7 +1,8 @@
 param(
   [string]$SkillsRoot = "",
   [string]$OutputDir = "",
-  [switch]$IncludeFullRoutes
+  [switch]$IncludeFullRoutes,
+  [switch]$AsJson
 )
 
 $ErrorActionPreference = "Stop"
@@ -954,7 +955,7 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   ) | Set-Content -LiteralPath $memoryPath -Encoding UTF8
 }
 
-[pscustomobject]@{
+$result = [pscustomobject]@{
   IndexScope = "installing-user-local-skills"
   SkillInstanceDir = $skillDir
   SkillsRoot = $skillsRootResolved
@@ -973,4 +974,11 @@ if (-not (Test-Path -LiteralPath $memoryPath)) {
   RouteSummary = Join-Path $OutputDir "route-summary.json"
   RoutesDir = $routesDir
   ShortlistsDir = $shortlistsDir
+}
+
+if ($AsJson) {
+  $result | ConvertTo-Json -Depth 6
+}
+else {
+  $result
 }
