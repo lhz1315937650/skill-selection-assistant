@@ -289,6 +289,16 @@ try {
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\DETAILED_CLASSIFICATION.md")) "installer should generate classification summary"
   Assert-True ($installResult.deep_index_ran -eq $true) "installer should build the exhaustive per-user deep index by default"
   Assert-True (Test-Path -LiteralPath (Join-Path $installDest ".skill-index\deep\source-manifest.json")) "installer deep index should include source freshness data"
+  Assert-True (@(Get-ChildItem -LiteralPath $installDest -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "__pycache__" -or $_.Name -like "*.pyc" }).Count -eq 0) "PowerShell installer should not copy Python cache artifacts"
+
+  $customCodexHome = Join-Path $outputRoot "custom-powershell-home"
+  $customSkillsRoot = Join-Path $customCodexHome "skills"
+  New-Item -ItemType Directory -Force -Path $customSkillsRoot | Out-Null
+  Copy-Item -LiteralPath (Join-Path $skillRoot "frontend-design") -Destination (Join-Path $customSkillsRoot "frontend-design") -Recurse -Force
+  $customInstallResult = (& $installScript -CodexHome $customCodexHome -Force | Out-String | ConvertFrom-Json)
+  Assert-True (@($customInstallResult.skills_roots).Count -eq 1) "an explicit PowerShell CodexHome should not add machine-default roots"
+  Assert-True ([string]$customInstallResult.skills_root -eq [IO.Path]::GetFullPath($customSkillsRoot)) "PowerShell custom CodexHome should scan its own skills directory"
+  Assert-True ([int]$customInstallResult.deep_index.metadata.raw_files -eq 1) "PowerShell custom CodexHome should not scan another user's default skill library"
 
   Assert-True (Test-Path -LiteralPath $pythonInstallScript) "install-skill.py should exist"
   $pythonInstallDest = Join-Path $outputRoot "python-installed\skills\skill-selection-assistant"
@@ -316,7 +326,15 @@ try {
   Assert-True ($cleanPreview.WhatIf -eq $true) "clean-local-artifacts.ps1 -WhatIf should be safe to preview"
 
   Assert-True (Test-Path -LiteralPath $packageScript) "package-release.ps1 should exist"
-  $packageResult = (& $packageScript -Version "smoke-test" | Out-String | ConvertFrom-Json)
+  $mismatchedPackageRejected = $false
+  try {
+    & $packageScript -Version "v0.0.0" | Out-Null
+  }
+  catch {
+    $mismatchedPackageRejected = $true
+  }
+  Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
+  $packageResult = (& $packageScript -Version "v1.7.1" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

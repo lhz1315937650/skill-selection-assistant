@@ -327,6 +327,12 @@ On Windows, the PowerShell installer is also supported:
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
+For an isolated or portable Codex home, both installers use that home's own `skills` directory by default:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1 -CodexHome "<codex home>"
+```
+
 This copies the router skill, optionally runs the compact compatibility scan, builds the exhaustive per-user deep index, and performs a first recommendation health check. Human-readable output is the default; add `--json` for automation.
 
 After the first scan, the installer also tries to generate `.skill-index/DETAILED_CLASSIFICATION.md`, `.skill-index/detailed-classification.json`, and `.skill-index/domain-task-matrix.csv`.
@@ -340,13 +346,15 @@ python scripts/install-skill.py --skip-deep-index
 python scripts/install-skill.py --check
 ```
 
+Managed-file updates are staged and rollback-capable. They replace only `SKILL.md`, `VERSION`, `agents/`, `references/`, `rules/`, `schemas/`, and `scripts/`; local `.skill-index/` data and unrelated files are preserved.
+
 Installing the folder does not automatically authorize global instruction changes. To opt in to running skill selection before normal requests, install with:
 
 ```bash
 python scripts/install-skill.py --configure-agents
 ```
 
-This appends a bounded managed block to the resolved global `AGENTS.md` and preserves unrelated instructions. Without this flag, the installer only reports the activation step.
+This appends a bounded managed block to the resolved global `AGENTS.md` and preserves unrelated instructions. Without this flag, the installer only reports the activation step. A prose-only mention of the repository is not treated as activation, and malformed or duplicated managed markers fail safely before installation writes begin.
 
 The cross-platform health check is:
 
@@ -354,7 +362,11 @@ The cross-platform health check is:
 python scripts/install-skill.py --check
 ```
 
-From the installed skill directory, `python scripts/doctor.py` provides the same portable runtime check without keeping the downloaded repository.
+From the installed skill directory, `python scripts/doctor.py` provides the same portable runtime check without keeping the downloaded repository. Add `--fix` to repair a missing, incomplete, corrupt, stale, or old-schema deep index; repeat `--skills-root` when recovering a nonstandard multi-root installation.
+
+```bash
+python scripts/doctor.py --fix
+```
 
 PowerShell users can also run the extended legacy diagnostic:
 

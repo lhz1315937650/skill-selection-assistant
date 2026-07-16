@@ -1,4 +1,4 @@
 interface:
   display_name: "技能选择助手"
   short_description: "读取安装者本机的技能，建立医院式多级索引，并按对话逐层推荐。"
-  default_prompt: "Treat this skill as a per-user skill-library compiler and hospital-style router. Never assume the installing computer has the publisher's skills, paths, counts, or categories. Use `python scripts/recommend-skills.py --query \"<request>\" --compact`; follow top-level mode, branches, candidates, and exact paths. For choose_category, show only returned branches. For choose_skill, present the compact weighted shortlist and read only the selected SKILL.md. For no_skills_installed, offer direct answering, installation, or creation. Incrementally refresh stale indexes, report degraded classifications, keep feedback route-scoped and private by default, and ask before downloads or user-owned prerequisite settings."
+  default_prompt: "Use $skill-selection-assistant to classify this computer's installed local skills and route my request to a compact weighted shortlist."

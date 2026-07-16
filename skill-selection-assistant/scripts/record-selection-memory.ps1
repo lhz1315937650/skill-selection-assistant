@@ -15,12 +15,32 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$pythonScript = Join-Path $PSScriptRoot "record-selection-memory.py"
+$python = Get-Command python -ErrorAction SilentlyContinue
+if ($python -and (Test-Path -LiteralPath $pythonScript)) {
+  $arguments = @(
+    $pythonScript,
+    "--query", $Query,
+    "--outcome", $Outcome
+  )
+  if ($SelectedSkill) { $arguments += @("--selected-skill", $SelectedSkill) }
+  if ($RouteType) { $arguments += @("--route-type", $RouteType) }
+  if ($Category) { $arguments += @("--category", $Category) }
+  if ($Notes) { $arguments += @("--notes", $Notes) }
+  if ($IndexDir) { $arguments += @("--index-dir", $IndexDir) }
+  if ($StoreQuery) { $arguments += "--store-query" }
+  & $python.Source @arguments
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  return
+}
+
 function Get-ShortText {
   param([string]$Text, [int]$MaxLength = 300)
   if ([string]::IsNullOrWhiteSpace($Text)) { return "" }
   $flat = (($Text -replace "\s+", " ").Trim())
-  if ($flat.Length -le $MaxLength) { return $flat }
-  return $flat.Substring(0, $MaxLength).Trim() + "..."
+  $safe = $flat.Replace('`', 'ˋ')
+  if ($safe.Length -le $MaxLength) { return $safe }
+  return $safe.Substring(0, $MaxLength).Trim() + "..."
 }
 
 if (-not $IndexDir) {
@@ -60,10 +80,10 @@ $entry.Add("")
 $entry.Add(('- outcome: `{0}`' -f $Outcome))
 $entry.Add("- query: " + $(if ($StoreQuery) { Get-ShortText -Text $Query } else { "[not stored]" }))
 if (-not [string]::IsNullOrWhiteSpace($SelectedSkill)) {
-  $entry.Add(('- selected_skill: `{0}`' -f $SelectedSkill))
+  $entry.Add(('- selected_skill: `{0}`' -f (Get-ShortText -Text $SelectedSkill)))
 }
 if (-not [string]::IsNullOrWhiteSpace($RouteType) -or -not [string]::IsNullOrWhiteSpace($Category)) {
-  $entry.Add(('- route: `{0}` / `{1}`' -f $RouteType, $Category))
+  $entry.Add(('- route: `{0}` / `{1}`' -f (Get-ShortText -Text $RouteType), (Get-ShortText -Text $Category)))
 }
 if (-not [string]::IsNullOrWhiteSpace($Notes)) {
   $entry.Add("- notes: " + (Get-ShortText -Text $Notes))

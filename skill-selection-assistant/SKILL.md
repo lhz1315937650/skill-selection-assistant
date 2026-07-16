@@ -1,8 +1,6 @@
 ---
 name: skill-selection-assistant
 description: Discover and classify the installing user's local Codex skills, route each new request through a token-efficient multi-level index, present a weighted shortlist in the user's language, ask which skill to activate, and protect dependency downloads and user-owned prerequisite settings behind explicit confirmation.
-metadata:
-  short-description: Route requests to installed local skills
 ---
 
 # Skill Selection Assistant
@@ -162,6 +160,8 @@ On first installation:
 
 On later refreshes, reuse unchanged classifications and read only added or modified skill files when schema, classifier, and rules fingerprints remain compatible.
 
+Before routing, validate the required deep artifacts and schema. Rebuild missing, incomplete, corrupt, or old-schema indexes, recovering configured roots from `source-manifest.json` when possible. Use `python scripts/doctor.py --fix` for explicit cross-platform repair.
+
 If failures exist, treat the index as `degraded`, report `failed_files`, and continue only with successfully classified skills. Use `--strict` for CI or audits that must fail on any classification error.
 
 Generated `.skill-index/` data is local runtime state. Never commit it or include it in a release.
@@ -180,6 +180,8 @@ python scripts/record-selection-memory.py --query "<request>" --outcome selected
 
 Raw queries are not stored by default. Use `--store-query` only when the user accepts local retention.
 
+Serialize concurrent memory appends and escape Markdown control characters in recorded fields so one malformed or simultaneous feedback event cannot corrupt later ranking.
+
 Memory boosts must remain bounded and apply only inside compatible selected routes. They must not influence root-level routing across unrelated categories.
 
 For self-growth reports and maintenance policy, read [references/SELF_GROWTH.md](references/SELF_GROWTH.md) only when the user requests feedback analysis, taxonomy improvement, or skill-library maintenance.
@@ -197,6 +199,7 @@ Installing the folder does not automatically authorize editing global instructio
 
 - Return structured errors for expected installation and routing problems.
 - Do not expose Python tracebacks unless debug mode is explicitly requested.
+- Stage managed-file updates and roll them back on publication failure while preserving `.skill-index/`.
 - Preserve the last usable index if a refresh fails.
 - Serialize concurrent index publication with a cross-process lock.
 - Never modify, move, or delete the skills being indexed.

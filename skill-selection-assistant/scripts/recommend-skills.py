@@ -13,6 +13,8 @@ from typing import Any
 
 
 SCHEMA_VERSION = "3.0.0"
+DEEP_SCHEMA_VERSION = "2.5.0"
+REQUIRED_ROUTING_FILES = ("source-manifest.json", "hierarchy.json", "facets.json", "route-cards.json", "label-keywords.json")
 
 
 def load_json(path: Path) -> Any:
@@ -30,14 +32,44 @@ def run_json(command: list[str], operation: str) -> dict[str, Any]:
         raise RuntimeError(f"{operation} returned invalid JSON: {result.stdout[:500]}") from exc
 
 
-def metadata_roots(metadata_path: Path) -> list[str]:
+def inspect_index(index_dir: Path) -> tuple[bool, str, list[str]]:
+    deep_dir = index_dir / "deep"
+    metadata_path = deep_dir / "metadata.json"
+    source_path = deep_dir / "source-manifest.json"
+    recovered_roots: list[str] = []
+    source: dict[str, Any] = {}
+    if source_path.exists():
+        try:
+            loaded_source = load_json(source_path)
+            if isinstance(loaded_source, dict):
+                source = loaded_source
+                recovered_roots = [str(value) for value in source.get("skills_roots", []) if value]
+        except (OSError, ValueError, json.JSONDecodeError):
+            source = {}
     if not metadata_path.exists():
-        return []
+        return False, "index_missing", recovered_roots
     try:
         metadata = load_json(metadata_path)
-    except (OSError, ValueError):
-        return []
-    return [str(value) for value in metadata.get("skills_roots", []) if value]
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False, "index_corrupt", recovered_roots
+    if not isinstance(metadata, dict):
+        return False, "index_corrupt", recovered_roots
+    metadata_values = [str(value) for value in metadata.get("skills_roots", []) if value]
+    if metadata_values:
+        recovered_roots = metadata_values
+    if metadata.get("schema_version") != DEEP_SCHEMA_VERSION:
+        return False, "index_schema_changed", recovered_roots
+    for name in REQUIRED_ROUTING_FILES:
+        path = deep_dir / name
+        if not path.exists():
+            return False, "index_incomplete", recovered_roots
+        try:
+            payload = load_json(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            return False, "index_corrupt", recovered_roots
+        if not isinstance(payload, dict):
+            return False, "index_corrupt", recovered_roots
+    return True, "", recovered_roots
 
 
 def main() -> int:
@@ -64,8 +96,10 @@ def main() -> int:
     if not builder.exists() or not router.exists():
         raise FileNotFoundError("The deep classifier or router is missing from the installed skill.")
 
-    existing_roots = metadata_roots(metadata_path)
+    index_valid, index_problem, existing_roots = inspect_index(index_dir)
     roots = list(dict.fromkeys(args.skills_root or existing_roots))
+    if not roots and skill_dir.parent.name.lower() == "skills":
+        roots = [str(skill_dir.parent.resolve())]
     normalized_existing = {os.path.normcase(str(Path(value).expanduser().resolve())) for value in existing_roots}
     normalized_requested = {os.path.normcase(str(Path(value).expanduser().resolve())) for value in args.skills_root}
     roots_changed = bool(args.skills_root) and normalized_requested != normalized_existing
@@ -77,15 +111,19 @@ def main() -> int:
 
     refreshed = False
     refresh_reason = ""
-    if not metadata_path.exists() or args.full_rebuild or roots_changed:
-        if not metadata_path.exists():
-            refresh_reason = "index_missing"
+    if not index_valid or args.full_rebuild or roots_changed:
+        if not index_valid:
+            refresh_reason = index_problem
         elif args.full_rebuild:
             refresh_reason = "full_rebuild_requested"
         else:
             refresh_reason = "skills_roots_changed"
         run_json(build_command, "deep index build")
         refreshed = True
+
+    index_valid, remaining_problem, _ = inspect_index(index_dir)
+    if not index_valid:
+        raise RuntimeError(f"Deep index remains unusable after refresh: {remaining_problem}")
 
     route_command = [
         sys.executable,

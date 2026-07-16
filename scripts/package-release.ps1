@@ -6,6 +6,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")
+$declaredVersion = (Get-Content -LiteralPath (Join-Path $repoRoot "skill-selection-assistant\VERSION") -Raw -Encoding UTF8).Trim()
+$requestedVersion = $Version.TrimStart("v")
+if ($requestedVersion -ne $declaredVersion) {
+  throw "Package version '$Version' does not match skill-selection-assistant/VERSION '$declaredVersion'."
+}
 $dist = Join-Path $repoRoot "dist"
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
@@ -48,11 +53,15 @@ try {
   }
 
   $tempResolved = [IO.Path]::GetFullPath($temp)
+  $cacheDirectories = @("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".venv", "node_modules")
   Get-ChildItem -LiteralPath $temp -Directory -Recurse -Force -ErrorAction SilentlyContinue |
-    Where-Object { $_.Name -eq "__pycache__" -and $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) } |
+    Where-Object { $_.Name -in $cacheDirectories -and $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) } |
     Remove-Item -Recurse -Force
-  Get-ChildItem -LiteralPath $temp -File -Recurse -Force -Filter "*.pyc" -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) } |
+  Get-ChildItem -LiteralPath $temp -File -Recurse -Force -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.FullName.StartsWith($tempResolved, [StringComparison]::OrdinalIgnoreCase) -and
+      ($_.Name -like "*.pyc" -or $_.Name -eq ".coverage" -or $_.Name -eq "coverage.xml")
+    } |
     Remove-Item -Force
 
   Compress-Archive -Path (Join-Path $temp "*") -DestinationPath $zip -Force
@@ -61,10 +70,10 @@ try {
   $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
   try {
     $forbidden = @($archive.Entries | Where-Object {
-      $_.FullName -like "*skill-index*" -or
-      $_.FullName -like "dist/*" -or
-      $_.FullName -like "*__pycache__*" -or
-      $_.FullName -like "*.pyc"
+      $name = $_.FullName -replace "\\", "/"
+      $name -match "(^|/)(\.skill-index|dist|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.venv|node_modules)(/|$)" -or
+      $name -match "(^|/)(\.coverage|coverage\.xml)$" -or
+      $name -like "*.pyc"
     })
     if ($forbidden.Count -gt 0) {
       throw "Release package contains forbidden local artifacts: " + (($forbidden | Select-Object -First 5 -ExpandProperty FullName) -join ", ")

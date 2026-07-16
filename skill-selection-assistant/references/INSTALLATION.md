@@ -54,11 +54,16 @@ python scripts/install-skill.py --force
 python scripts/install-skill.py --check
 ```
 
+Managed updates use a staged, rollback-capable transaction. Preserve `.skill-index/` and unrelated local files even if managed-file publication fails.
+
 After deleting the downloaded repository, run the installed cross-platform doctor directly:
 
 ```bash
 python "<installed skill>/scripts/doctor.py"
+python "<installed skill>/scripts/doctor.py" --fix
 ```
+
+Use `--fix` for missing, incomplete, corrupt, stale, or old-schema deep indexes. Repeat `--skills-root` for nonstandard multi-root recovery.
 
 Updates replace managed files (`SKILL.md`, `VERSION`, `agents/`, `rules/`, `references/`, `schemas/`, and `scripts/`) while preserving `.skill-index/`.
 

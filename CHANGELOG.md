@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.1 - 2026-07-16
+
+- added automatic detection and repair of missing, incomplete, corrupt, or old-schema deep routing indexes
+- upgraded the cross-platform doctor with structured diagnostics, `--fix`, repeated `--skills-root`, and compact output
+- made Python and PowerShell managed-file updates rollback-capable while preserving `.skill-index/` and unrelated local files
+- fixed the PowerShell installer so an explicit custom Codex home scans only that home by default
+- hardened managed `AGENTS.md` activation detection against prose-only mentions and unbalanced marker blocks
+- serialized concurrent feedback writes, escaped Markdown control characters, and kept raw request text private by default
+- aligned skill frontmatter and UI metadata with the current `skill-creator` contract
+- made release packaging reject version mismatches and exclude common test, virtual-environment, coverage, and dependency caches
+
 ## v1.7.0 - 2026-07-15
 
 - added first-install planning, human-readable summaries, structured errors, version reporting, health checks, and opt-in managed `AGENTS.md` activation

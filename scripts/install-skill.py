@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from typing import Any
 MIN_PYTHON = (3, 10)
 AGENTS_MARKER_START = "<!-- skill-selection-assistant:start -->"
 AGENTS_MARKER_END = "<!-- skill-selection-assistant:end -->"
+MANAGED_ITEMS = ("SKILL.md", "VERSION", "agents", "references", "rules", "schemas", "scripts")
 
 
 def resolve_codex_home(explicit: str) -> Path:
@@ -52,22 +54,70 @@ def read_version(skill_dir: Path) -> str:
     return version_path.read_text(encoding="utf-8-sig").strip() if version_path.exists() else "development"
 
 
+def path_present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def remove_path(path: Path) -> None:
+    if not path_present(path):
+        return
+    if path.is_symlink() or not path.is_dir():
+        path.unlink()
+    else:
+        shutil.rmtree(path)
+
+
 def copy_skill(source: Path, destination: Path) -> None:
+    """Replace managed files as one rollback-capable transaction.
+
+    Local runtime state such as .skill-index and unrelated user files are never
+    staged, moved, or deleted.
+    """
+    if destination.is_symlink():
+        raise RuntimeError(f"Refusing to install through a symlinked destination: {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    created_destination = not path_present(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    for item_name in ("SKILL.md", "VERSION", "agents", "references", "rules", "schemas", "scripts"):
-        src = source / item_name
-        dst = destination / item_name
-        if not src.exists():
-            continue
-        if dst.exists():
-            if dst.is_dir():
-                shutil.rmtree(dst)
+    transaction_root = Path(tempfile.mkdtemp(prefix=".skill-selection-install-", dir=destination.parent))
+    staged_root = transaction_root / "staged"
+    backup_root = transaction_root / "backup"
+    staged_root.mkdir()
+    backup_root.mkdir()
+    replaced: list[tuple[Path, Path, bool]] = []
+    try:
+        for item_name in MANAGED_ITEMS:
+            src = source / item_name
+            staged = staged_root / item_name
+            if not src.exists():
+                continue
+            if src.is_dir():
+                shutil.copytree(src, staged, ignore=shutil.ignore_patterns(".skill-index", "__pycache__", "*.pyc"))
             else:
-                dst.unlink()
-        if src.is_dir():
-            shutil.copytree(src, dst, ignore=shutil.ignore_patterns(".skill-index", "__pycache__"))
-        else:
-            shutil.copy2(src, dst)
+                shutil.copy2(src, staged)
+
+        for item_name in MANAGED_ITEMS:
+            destination_item = destination / item_name
+            staged_item = staged_root / item_name
+            backup_item = backup_root / item_name
+            had_existing = path_present(destination_item)
+            if had_existing:
+                os.replace(destination_item, backup_item)
+            replaced.append((destination_item, backup_item, had_existing))
+            if path_present(staged_item):
+                os.replace(staged_item, destination_item)
+    except Exception:
+        for destination_item, backup_item, had_existing in reversed(replaced):
+            remove_path(destination_item)
+            if had_existing and path_present(backup_item):
+                os.replace(backup_item, destination_item)
+        if created_destination:
+            try:
+                destination.rmdir()
+            except OSError:
+                pass
+        raise
+    finally:
+        shutil.rmtree(transaction_root, ignore_errors=True)
 
 
 def find_powershell() -> str:
@@ -219,14 +269,34 @@ def agents_block(destination: Path) -> str:
 
 def configure_agents(agents_path: Path, destination: Path, write: bool) -> dict[str, Any]:
     existing = agents_path.read_text(encoding="utf-8-sig", errors="replace") if agents_path.exists() else ""
-    configured = AGENTS_MARKER_START in existing or "skill-selection-assistant" in existing
+    start_count = existing.count(AGENTS_MARKER_START)
+    end_count = existing.count(AGENTS_MARKER_END)
+    marker_order_valid = (
+        start_count == 1
+        and end_count == 1
+        and existing.index(AGENTS_MARKER_START) < existing.index(AGENTS_MARKER_END)
+    )
+    if start_count or end_count:
+        activation_state = "managed" if marker_order_valid else "corrupt-managed-block"
+    elif "recommend-skills.py" in existing and "skill-selection-assistant" in existing:
+        activation_state = "legacy"
+    else:
+        activation_state = "not-configured"
+    if write and activation_state == "corrupt-managed-block":
+        raise ValueError(
+            f"The managed skill-selection block in {agents_path} has missing, duplicated, or out-of-order markers. "
+            "Repair that block before running --configure-agents again."
+        )
+    configured = activation_state in {"managed", "legacy"}
     if write and not configured:
         agents_path.parent.mkdir(parents=True, exist_ok=True)
         prefix = existing.rstrip() + "\n\n" if existing.strip() else ""
         agents_path.write_text(prefix + agents_block(destination), encoding="utf-8")
         configured = True
+        activation_state = "managed"
     return {
         "activation_configured": configured,
+        "activation_state": activation_state,
         "agents_file": str(agents_path),
         "activation_write_requested": write,
     }
@@ -307,6 +377,12 @@ def main() -> int:
     agents_path = Path(args.agents_file).expanduser().resolve() if args.agents_file else codex_home / "AGENTS.md"
     version = read_version(source)
     language = human_language(args.lang)
+    activation_preflight = configure_agents(agents_path, destination, False)
+    if args.configure_agents and activation_preflight["activation_state"] == "corrupt-managed-block":
+        raise ValueError(
+            f"The managed skill-selection block in {agents_path} has missing, duplicated, or out-of-order markers. "
+            "Repair that block before running --configure-agents again."
+        )
 
     if args.check:
         if not destination.is_dir():
@@ -314,7 +390,7 @@ def main() -> int:
         index_dir = destination / ".skill-index"
         metadata_path = index_dir / "deep" / "metadata.json"
         metadata = json.loads(metadata_path.read_text(encoding="utf-8-sig")) if metadata_path.exists() else {}
-        activation = configure_agents(agents_path, destination, False)
+        activation = activation_preflight
         health = run_health_check(destination, str(index_dir)) if not args.no_health_check else {"health_check_ran": False}
         output = {
             "status": "installed" if (destination / "SKILL.md").exists() else "not-installed",
@@ -331,6 +407,7 @@ def main() -> int:
 
     planned_count = count_skill_files(skills_roots, destination)
     if args.dry_run:
+        activation = activation_preflight
         output = {
             "status": "planned",
             "version": version,
@@ -338,8 +415,7 @@ def main() -> int:
             "skills_roots": skills_roots,
             "planned_skill_files": planned_count,
             "powershell_available": bool(find_powershell()),
-            "agents_file": str(agents_path),
-            "activation_configured": agents_path.exists() and "skill-selection-assistant" in agents_path.read_text(encoding="utf-8-sig", errors="replace"),
+            **activation,
         }
         emit(output, args.json, language)
         return 0

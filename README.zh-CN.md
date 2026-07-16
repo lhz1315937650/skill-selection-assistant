@@ -84,7 +84,15 @@ Windows 用户也可以继续使用 PowerShell 安装脚本：
 powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 ```
 
+使用隔离或便携 Codex Home 时，PowerShell 安装器也会默认只扫描该目录自己的 `skills`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1 -CodexHome "<codex home>"
+```
+
 它会安装路由器、构建本机深层索引并执行第一次推荐自检。默认输出面向用户的简短摘要；自动化程序可以添加 `--json`。已有安装时，Python 安装器使用 `--force` 更新，同时保留本地运行时索引。
+
+更新会先暂存受管文件，并在发布失败时自动回滚。它只替换 `SKILL.md`、`VERSION`、`agents/`、`references/`、`rules/`、`schemas/` 和 `scripts/`，不会删除 `.skill-index/` 或其他本地文件。
 
 首次扫描后，安装器会尽量生成 `.skill-index/DETAILED_CLASSIFICATION.md`、`.skill-index/detailed-classification.json` 和 `.skill-index/domain-task-matrix.csv`，方便用户直接查看本机 skill 的详细分类分布。
 
@@ -105,7 +113,7 @@ python scripts/install-skill.py --check
 python scripts/install-skill.py --configure-agents
 ```
 
-该参数只会追加一个有边界标记的托管区块，并保留 `AGENTS.md` 中其他指令。不传此参数时，安装器只显示启用提示，不会修改全局配置。
+该参数只会追加一个有边界标记的托管区块，并保留 `AGENTS.md` 中其他指令。不传此参数时，安装器只显示启用提示，不会修改全局配置。普通文字中提到仓库名不会被误判为已启用；缺失、重复或顺序错误的托管标记会在写入安装文件前安全报错。
 
 安装后的跨平台自检命令：
 
@@ -113,7 +121,11 @@ python scripts/install-skill.py --configure-agents
 python scripts/install-skill.py --check
 ```
 
-进入已安装的 skill 目录后，也可以直接运行 `python scripts/doctor.py`，不需要保留下载的仓库。
+进入已安装的 skill 目录后，也可以直接运行 `python scripts/doctor.py`，不需要保留下载的仓库。使用 `--fix` 可以修复缺失、不完整、损坏、过期或旧协议的深层索引；非标准多根目录可以重复传入 `--skills-root`。
+
+```bash
+python scripts/doctor.py --fix
+```
 
 PowerShell 用户还可以运行扩展兼容诊断：
 

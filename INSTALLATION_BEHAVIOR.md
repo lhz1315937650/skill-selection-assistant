@@ -57,7 +57,9 @@ powershell -ExecutionPolicy Bypass -File scripts/install-skill.ps1
 
 The Python installer is the preferred cross-platform entry point and requires Python 3.10 or newer. It copies the router, builds the deep Python index, and runs a recommendation health check. If PowerShell/pwsh is available, it also builds compatibility reports; otherwise, normal deep recommendations remain fully available.
 
-An explicit `--codex-home` must also define the default scanned root as `<codex-home>/skills`. It must never silently fall back to another machine-default Codex home. Global `AGENTS.md` activation is opt-in through `--configure-agents` and must preserve unrelated instructions.
+An explicit Python `--codex-home` or PowerShell `-CodexHome` must also define the default scanned root as `<codex-home>/skills`. It must never silently fall back to another machine-default Codex home. Global `AGENTS.md` activation is opt-in through `--configure-agents` and must preserve unrelated instructions.
+
+Managed-file updates must be staged and rollback-capable. They may replace only the published managed files while preserving `.skill-index/` and unrelated local content.
 
 After a successful scan, installers should try to run `skill-selection-assistant/scripts/summarize-index.py` to generate `DETAILED_CLASSIFICATION.md`, `detailed-classification.json`, and `domain-task-matrix.csv`. If Python is unavailable in the PowerShell installer path, summary generation may be skipped without blocking installation.
 
@@ -85,7 +87,7 @@ The intended behavior is:
 6. on compatible refreshes, reclassify only added or modified sources and remove deleted sources
 7. use the generated catalog only as a portable per-user runtime aid
 
-If `recommend-skills.py` is run before an index exists, it builds the deep local index automatically without requiring PowerShell. `recommend-skills.ps1` provides the equivalent PowerShell entry point and the legacy compact scanner fallback.
+If `recommend-skills.py` is run before an index exists, or when required routing artifacts are incomplete, corrupt, or from an old schema, it rebuilds the deep local index automatically without requiring PowerShell. It first recovers configured roots from the source manifest when possible. `recommend-skills.ps1` provides the equivalent PowerShell entry point and the legacy compact scanner fallback.
 
 The catalog should reflect the user's actual installed skills across every configured root, because every user's local skill set may be different. Both installers accept repeated skills-root arguments.
 
