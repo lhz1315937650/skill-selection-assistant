@@ -21,6 +21,28 @@ Treat this skill as a per-user compiler and router, not as a published catalog o
 
 Never assume another computer has the publisher's skill names, paths, counts, categories, or generated index.
 
+## Three-Layer Progressive Loading
+
+Keep discovery, activation, and supporting material as three separate loading
+boundaries:
+
+1. **Metadata layer** — During discovery and shortlist presentation, use and
+   display only each skill's `name` and `description` (plus its recommendation
+   weight when ranking is requested). Routing metadata such as labels, paths,
+   hashes, setup flags, and provenance may be used internally but must not be
+   presented as skill content.
+2. **Instruction layer** — After the task matches a skill and the user selects
+   it, read that skill's `SKILL.md` body. Do not preload the bodies of other
+   candidates.
+3. **Reference layer** — Read files linked by the selected `SKILL.md` only when
+   the active task reaches the operation that needs them. Do not recursively
+   preload `references/`, `scripts/`, templates, examples, or other linked
+   material.
+
+Index construction is an offline maintenance operation and may read full
+`SKILL.md` files to classify them. This does not change the runtime loading
+boundaries above.
+
 ## Trigger And Skip Rules
 
 Run selection when:
@@ -62,10 +84,9 @@ Follow the returned mode:
 
 ### `choose_category`
 
-1. Show only the returned branches.
-2. Briefly explain the practical distinction in the user's language.
-3. Ask the user to choose one.
-4. Continue with the exact returned path:
+Category routing is an AI-only intermediate surface. Do not show branches or
+ask the user to classify the task. Continue internally with the strongest
+returned branch and its exact path:
 
 ```bash
 python scripts/recommend-skills.py --query "<user request>" --path "<exact path>" --compact
@@ -73,11 +94,13 @@ python scripts/recommend-skills.py --query "<user request>" --path "<exact path>
 
 ### `choose_skill`
 
-1. Present the returned compact candidates in their ranked order.
-2. Give one short practical reason for each candidate.
-3. Mention all explicit `setup_requirements` that affect the choice.
-4. Ask which skill to activate.
-5. Read only the chosen `SKILL.md` after the user chooses.
+1. Present the final 3-4 compact candidates in their ranked order (or all
+   candidates when fewer than three exist).
+2. For each candidate, display only its name, description, and returned weight.
+3. Ask which skill to activate.
+4. Read only the chosen `SKILL.md` after the user chooses.
+5. After activation, mention `setup_requirements` only if they affect the next
+   operation.
 
 ### `no_skills_installed`
 
@@ -96,12 +119,16 @@ Refresh the index through the recommender before selecting. Do not recommend fro
 ## Recommendation Rules
 
 - Use the dynamic returned set; never force a fixed `1-3` count.
-- A strong match may return one skill; several close matches may return more.
+- Prefer a final shortlist of 3-4 skills when the matched pool is large enough.
+- Intermediate category branches, paths, scores, and route traces are for the
+  AI only and must not be shown to the user.
 - Prefer user-local skills, then official system skills, then installed topical skills, then linked external/community skills.
 - Prefer workflow fit over keyword overlap.
 - Merge identical content and keep meaningful same-name variants distinguishable.
 - Do not load the full hierarchy, detailed catalog, NDJSON index, or all route cards into model context during ordinary selection.
 - Do not invent candidates that were not returned by the installing user's current index.
+- Do not expose classification tags, source paths, hashes, provenance,
+  duplicate counts, or reference-file contents in the user-facing shortlist.
 
 ## User-Facing Language
 

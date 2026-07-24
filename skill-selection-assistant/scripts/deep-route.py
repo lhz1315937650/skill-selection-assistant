@@ -478,9 +478,26 @@ def run_facet_route(
     if scored_visible:
         top_score = scored_visible[0]["score"]
         if top_score > 0:
-            returned = [item for item in scored_visible if item["score"] >= top_score - args.candidate_score_window][: args.limit]
+            returned = [
+                item for item in scored_visible
+                if item["score"] >= top_score - args.candidate_score_window
+            ][: args.limit]
+            # The final user-facing choice should normally contain 3-4 useful
+            # options. Pad a narrow score window with the next-ranked skills
+            # when the candidate pool is large enough.
+            target_minimum = min(3, args.limit, len(scored_visible))
+            if len(returned) < target_minimum:
+                returned_ids = {str(item["card"].get("skill_id") or "") for item in returned}
+                for item in scored_visible:
+                    skill_id = str(item["card"].get("skill_id") or "")
+                    if skill_id in returned_ids:
+                        continue
+                    returned.append(item)
+                    returned_ids.add(skill_id)
+                    if len(returned) >= target_minimum:
+                        break
         else:
-            returned = scored_visible[: min(args.limit, 5)]
+            returned = scored_visible[: args.limit]
     else:
         returned = []
     result_candidates: list[dict[str, Any]] = []
@@ -519,7 +536,12 @@ def run_facet_route(
         "content_variant_pool": len(ranked),
         "returned_candidates": len(result_candidates),
         "candidates": result_candidates,
-        "instruction": "Present this compact final shortlist and ask which skill to activate. Read only the chosen SKILL.md.",
+        "instruction": (
+            "Present only each candidate's name, function_summary as its description, "
+            "and score as its weight. Ask which skill to activate. Do not display paths, "
+            "tags, provenance, setup metadata, or duplicate metadata. Read only the "
+            "chosen SKILL.md after selection, and read its linked files only when needed."
+        ),
     }
 
 

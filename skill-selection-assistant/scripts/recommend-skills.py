@@ -78,12 +78,17 @@ def main() -> int:
     parser.add_argument("--path", default="")
     parser.add_argument("--index-dir", default="")
     parser.add_argument("--skills-root", action="append", default=[], help="Repeat to index multiple local skill roots.")
-    parser.add_argument("--limit", type=int, default=8)
+    parser.add_argument("--limit", type=int, default=4)
     parser.add_argument("--leaf-target", type=int, default=0)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--full-rebuild", action="store_true")
     parser.add_argument("--compat", action="store_true", help="Include the deprecated nested deep_route object.")
     parser.add_argument("--compact", action="store_true", help="Emit compact JSON for lower token and logging overhead.")
+    parser.add_argument(
+        "--show-branches",
+        action="store_true",
+        help="Stop at category branches for taxonomy debugging instead of routing them automatically.",
+    )
     parser.add_argument("--debug", action="store_true", help="Show Python tracebacks for unexpected failures.")
     args = parser.parse_args()
 
@@ -149,11 +154,46 @@ def main() -> int:
         refreshed = True
         deep_result = run_json(route_command, "deep route selection after refresh")
 
+    # Category branches are an AI-internal routing surface. In normal use, walk
+    # the best-scoring branch automatically until the final skill shortlist is
+    # reached. --show-branches preserves the branch view for taxonomy audits.
+    route_trace: list[dict[str, Any]] = []
+    visited_paths = {args.path}
+    while not args.show_branches and deep_result.get("mode") == "choose_category":
+        branches = list(deep_result.get("branches") or [])
+        if not branches:
+            break
+        selected_branch = max(
+            branches,
+            key=lambda item: (int(item.get("query_score") or 0), -int(item.get("count") or 0)),
+        )
+        selected_path = str(selected_branch.get("path") or "")
+        if not selected_path or selected_path in visited_paths:
+            break
+        route_trace.append({
+            "level": deep_result.get("next_level", ""),
+            "selected": selected_branch.get("name", ""),
+            "path": selected_path,
+            "score": int(selected_branch.get("query_score") or 0),
+        })
+        visited_paths.add(selected_path)
+        next_command = list(route_command)
+        if "--path" in next_command:
+            path_index = next_command.index("--path")
+            next_command[path_index + 1] = selected_path
+        else:
+            next_command.extend(["--path", selected_path])
+        deep_result = run_json(next_command, "automatic deep route selection")
+
     metadata = load_json(metadata_path)
     mode = str(deep_result.get("mode") or "")
     next_step = {
-        "choose_category": "Present only the returned branches, ask the user to choose one, then call this script again with its exact --path.",
-        "choose_skill": "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md.",
+        "choose_category": "Internal routing is ambiguous. Keep branch details AI-facing; do not show them to the user.",
+            "choose_skill": (
+                "Present only candidate name, description, and weight; ask which skill "
+                "to activate. Read only the chosen SKILL.md, then read linked files only "
+                "when the active task needs them."
+            ),
         "no_skills_installed": "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill.",
     }.get(mode, str(deep_result.get("instruction") or ""))
     output = {
@@ -171,6 +211,7 @@ def main() -> int:
             "scope": metadata.get("index_scope", "installing-user-local-skills-exhaustive"),
         },
         "route": deep_result.get("current", {}),
+        "route_trace": route_trace,
         "branches": deep_result.get("branches", []),
         "candidates": deep_result.get("candidates", []),
         "next_step": next_step,
