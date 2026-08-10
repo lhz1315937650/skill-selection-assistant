@@ -1,4 +1,4 @@
 interface:
   display_name: "技能选择助手"
-  short_description: "读取安装者本机的技能，建立医院式多级索引，并按对话逐层推荐。"
+  short_description: "读取安装者本机的技能，自动完成多级路由，并只返回最终候选。"
   default_prompt: "Use $skill-selection-assistant to classify this computer's installed local skills and route my request to a compact weighted shortlist."

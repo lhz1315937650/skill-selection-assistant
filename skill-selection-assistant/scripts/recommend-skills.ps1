@@ -210,6 +210,34 @@ if (-not $Legacy) {
       $deepWasRefreshed = $true
       $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     }
+
+    # Category branches are internal routing details. Follow the strongest
+    # branch until a final shortlist is reached instead of asking the user to
+    # classify their own request.
+    $routeTrace = @()
+    $visitedPaths = New-Object 'System.Collections.Generic.HashSet[string]'
+    [void]$visitedPaths.Add([string]$Path)
+    while ($deepResult.mode -eq "choose_category") {
+      $branches = @($deepResult.branches)
+      if ($branches.Count -eq 0) { break }
+      $selectedBranch = @(
+        $branches |
+          Sort-Object @{ Expression = { [int]$_.query_score }; Descending = $true }, @{ Expression = { [int]$_.count }; Descending = $false } |
+          Select-Object -First 1
+      )[0]
+      $selectedPath = [string]$selectedBranch.path
+      if ([string]::IsNullOrWhiteSpace($selectedPath) -or $visitedPaths.Contains($selectedPath)) { break }
+      $routeTrace += [pscustomobject]@{
+        level = [string]$deepResult.next_level
+        selected = [string]$selectedBranch.name
+        path = $selectedPath
+        score = [int]$selectedBranch.query_score
+      }
+      [void]$visitedPaths.Add($selectedPath)
+      $nextDeepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }), "--path", $selectedPath)
+      $deepResult = (& $python.Source @nextDeepArgs | Out-String | ConvertFrom-Json)
+    }
+
     $deepEnvelope = [ordered]@{
       schema_version = "3.0.0"
       query = $Query
@@ -223,10 +251,11 @@ if (-not $Legacy) {
         scope = "installing-user-local-skills-exhaustive"
       }
       route = $deepResult.current
+      route_trace = @($routeTrace)
       branches = @($deepResult.branches)
       candidates = @($deepResult.candidates)
       next_step = $(switch ($deepResult.mode) {
-        "choose_category" { "Present only the returned branches, ask the user to choose one, then call recommend-skills.ps1 again with its exact -Path." }
+        "choose_category" { "Internal routing is ambiguous. Keep branch details AI-facing; do not show them to the user." }
         "choose_skill" { "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md." }
         "no_skills_installed" { "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill." }
         default { [string]$deepResult.instruction }

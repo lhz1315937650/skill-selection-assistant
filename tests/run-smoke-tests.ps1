@@ -167,12 +167,14 @@ try {
   Assert-True (-not ($deepRecommendation.PSObject.Properties.Name -contains "deep_route")) "default recommendation output should not duplicate the deep route payload"
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "branches") "the unified envelope should expose branches at top level"
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "candidates") "the unified envelope should expose candidates at top level"
-  Assert-True (@("choose_category", "choose_skill") -contains $deepRecommendation.mode) "deep recommendation should return the next hospital-routing step"
+  Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
+  Assert-True (@($deepRecommendation.route_trace).Count -gt 0) "PowerShell recommendation should retain its internal route trace"
 
   Assert-True (Test-Path -LiteralPath $pythonRecommendScript) "cross-platform recommend-skills.py should exist"
   $pythonRecommendation = (& python $pythonRecommendScript --query "build a beautiful frontend UI" --index-dir $indexDir --skills-root $skillRoot --limit 3 | Out-String | ConvertFrom-Json)
   Assert-True ($pythonRecommendation.schema_version -eq "3.0.0") "Python recommender should use the stable recommendation envelope"
   Assert-True ($pythonRecommendation.engine -eq "deep_hospital") "Python recommender should use the deep hospital router"
+  Assert-True ($pythonRecommendation.mode -eq "choose_skill") "Python recommender should return final candidates without category questions"
 
   $recommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir -Legacy | Out-String | ConvertFrom-Json)
   Assert-True ($recommendation.route.route_type -eq "adaptive_leaf") "recommendation should use adaptive leaf route"
@@ -334,7 +336,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.7.1" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.7.2" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

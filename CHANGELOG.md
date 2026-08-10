@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.2 - 2026-08-10
+
+- changed normal Python and PowerShell recommendation flows to traverse category branches internally and return only the final skill shortlist
+- kept intermediate branches available only through the Python `--show-branches` taxonomy-debugging option
+- updated generated `AGENTS.md` guidance and regression tests so users are never asked to classify requests category by category
+
 ## v1.7.1 - 2026-07-16
 
 - added automatic detection and repair of missing, incomplete, corrupt, or old-schema deep routing indexes

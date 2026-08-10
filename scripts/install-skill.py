@@ -259,7 +259,7 @@ def agents_block(destination: Path) -> str:
         "",
         "1. Use the installed `skill-selection-assistant` first.",
         f"2. Run `python \"{destination / 'scripts' / 'recommend-skills.py'}\" --query \"<user request>\" --compact`.",
-        "3. Present the returned weighted skills in the user's language and ask which one to use.",
+        "3. Never show intermediate categories or ask the user to classify the request; present only the final returned weighted skills and ask which one to use.",
         "4. Keep the chosen skill active for later turns in the same workflow.",
         "5. Ask before dependency downloads and before assuming user-owned prerequisite settings.",
         AGENTS_MARKER_END,

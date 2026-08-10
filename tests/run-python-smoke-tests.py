@@ -86,33 +86,28 @@ def test_routing_and_incremental(temp: Path) -> None:
     explicit = next(json.loads(line) for line in (index / "deep" / "skills-deep-index.ndjson").read_text(encoding="utf-8").splitlines() if '"explicit-api-client"' in line)
     assert_true(set(explicit["setup_requirements"]) >= {"api-key", "local-runtime"}, "setup requirements should be multi-label")
 
-    path = ""
-    result: dict[str, Any] = {}
-    for _ in range(12):
-        command = [
-            sys.executable,
-            str(RECOMMENDER),
-            "--query",
-            "build a beautiful frontend UI",
-            "--index-dir",
-            str(index),
-            "--skills-root",
-            str(root),
-            "--leaf-target",
-            "3",
-            "--limit",
-            "12",
-        ]
-        if path:
-            command.extend(["--path", path])
-        result = run_json(command)
-        if result["mode"] == "choose_skill":
-            break
-        path = result["branches"][0]["path"]
+    command = [
+        sys.executable,
+        str(RECOMMENDER),
+        "--query",
+        "build a beautiful frontend UI",
+        "--index-dir",
+        str(index),
+        "--skills-root",
+        str(root),
+        "--leaf-target",
+        "3",
+        "--limit",
+        "12",
+    ]
+    result = run_json(command)
     assert_true(result["schema_version"] == "3.0.0", "unified recommender should expose an explicit schema")
     assert_true("deep_route" not in result, "default recommendation output should not duplicate the deep route payload")
-    assert_true(result["mode"] == "choose_skill", "router should reach a skill shortlist")
+    assert_true(result["mode"] == "choose_skill", "default recommendation should automatically reach a skill shortlist")
+    assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
+    branch_debug = run_json(command + ["--show-branches"])
+    assert_true(branch_debug["mode"] == "choose_category", "explicit taxonomy debugging should still expose category branches")
     compatible = run_json(command + ["--compat"])
     assert_true("deep_route" in compatible, "legacy consumers should be able to request the nested deep route payload")
     invalid = subprocess.run(
@@ -326,7 +321,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.7.1", "installer should report the installed version")
+    assert_true(installed["version"] == "1.7.2", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,

@@ -1,6 +1,6 @@
 ---
 name: skill-selection-assistant
-description: Discover and classify the installing user's local Codex skills, route each new request through a token-efficient multi-level index, present a weighted shortlist in the user's language, ask which skill to activate, and protect dependency downloads and user-owned prerequisite settings behind explicit confirmation.
+description: Discover and classify the installing user's local Codex skills, automatically route each new request through a token-efficient multi-level index, present only the final weighted shortlist in the user's language, ask which skill to activate, and protect dependency downloads and user-owned prerequisite settings behind explicit confirmation.
 ---
 
 # Skill Selection Assistant
