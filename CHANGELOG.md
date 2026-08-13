@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.3 - 2026-08-13
+
+- moved automatic category traversal into one `deep-route.py` process so large indexes are loaded and checked only once per recommendation
+- added a five-minute freshness cache keyed to the source manifest and classifier fingerprints, with explicit force-refresh controls
+- reduced repeated large-library recommendations from timeout-prone multi-process routing to a single cached routing pass
+
 ## v1.7.2 - 2026-08-10
 
 - changed normal Python and PowerShell recommendation flows to traverse category branches internally and return only the final skill shortlist

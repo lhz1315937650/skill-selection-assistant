@@ -199,7 +199,7 @@ if (-not $Legacy) {
       }
     }
 
-    $deepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }))
+    $deepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }), "--auto-route")
     if ($Path) { $deepArgs += @("--path", $Path) }
     $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     if ($deepResult.mode -eq "index_stale") {
@@ -209,33 +209,6 @@ if (-not $Legacy) {
       }
       $deepWasRefreshed = $true
       $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
-    }
-
-    # Category branches are internal routing details. Follow the strongest
-    # branch until a final shortlist is reached instead of asking the user to
-    # classify their own request.
-    $routeTrace = @()
-    $visitedPaths = New-Object 'System.Collections.Generic.HashSet[string]'
-    [void]$visitedPaths.Add([string]$Path)
-    while ($deepResult.mode -eq "choose_category") {
-      $branches = @($deepResult.branches)
-      if ($branches.Count -eq 0) { break }
-      $selectedBranch = @(
-        $branches |
-          Sort-Object @{ Expression = { [int]$_.query_score }; Descending = $true }, @{ Expression = { [int]$_.count }; Descending = $false } |
-          Select-Object -First 1
-      )[0]
-      $selectedPath = [string]$selectedBranch.path
-      if ([string]::IsNullOrWhiteSpace($selectedPath) -or $visitedPaths.Contains($selectedPath)) { break }
-      $routeTrace += [pscustomobject]@{
-        level = [string]$deepResult.next_level
-        selected = [string]$selectedBranch.name
-        path = $selectedPath
-        score = [int]$selectedBranch.query_score
-      }
-      [void]$visitedPaths.Add($selectedPath)
-      $nextDeepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }), "--path", $selectedPath)
-      $deepResult = (& $python.Source @nextDeepArgs | Out-String | ConvertFrom-Json)
     }
 
     $deepEnvelope = [ordered]@{
@@ -251,7 +224,7 @@ if (-not $Legacy) {
         scope = "installing-user-local-skills-exhaustive"
       }
       route = $deepResult.current
-      route_trace = @($routeTrace)
+      route_trace = @($deepResult.route_trace)
       branches = @($deepResult.branches)
       candidates = @($deepResult.candidates)
       next_step = $(switch ($deepResult.mode) {

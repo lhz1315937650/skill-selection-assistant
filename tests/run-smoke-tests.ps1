@@ -220,7 +220,7 @@ try {
     "",
     "# Portable Kubernetes Deployer"
   )
-  $staleDeepResult = (& python $deepRouteScript --query "deploy a Kubernetes application" --index-dir $freshnessIndexDir | Out-String | ConvertFrom-Json)
+  $staleDeepResult = (& python $deepRouteScript --query "deploy a Kubernetes application" --index-dir $freshnessIndexDir --force-freshness-check | Out-String | ConvertFrom-Json)
   Assert-True ($staleDeepResult.mode -eq "index_stale") "deep router should refuse stale per-user classifications"
   Assert-True ($staleDeepResult.freshness.reason -eq "skill_set_changed") "deep freshness result should explain that the installed skill set changed"
   $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot -Legacy | Out-String | ConvertFrom-Json)
@@ -336,7 +336,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.7.2" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.7.3" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

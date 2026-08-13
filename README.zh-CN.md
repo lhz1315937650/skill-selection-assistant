@@ -169,6 +169,8 @@ powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "�
 
 推荐前会检查本地索引是否缺失、不完整、损坏、过期或协议版本过旧。需要时自动修复，并尽量只重新分类新增或修改的文件。
 
+大型 skill 库默认使用 5 分钟的本地新鲜度缓存，避免每次请求都递归扫描所有 `SKILL.md`。如需立刻完整扫描，可使用 `--force-freshness-check`；使用 `--freshness-cache-seconds 0` 可禁用缓存复用。
+
 手动诊断：
 
 ```bash
@@ -240,7 +242,7 @@ powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 构建发布包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.2
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.3
 ```
 
 ## 项目结构

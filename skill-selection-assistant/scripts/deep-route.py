@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ GENERIC_NAME_ROUTE_TOKENS = {
     "api", "app", "code", "data", "design", "file", "frontend", "help", "skill",
     "test", "tool", "web", "workflow", "ci", "css", "html", "js", "md", "ui",
 }
+DEFAULT_FRESHNESS_CACHE_SECONDS = 300
 
 
 def load_json(path: Path) -> Any:
@@ -27,10 +29,46 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def check_index_freshness(metadata: dict[str, Any], deep_dir: Path) -> dict[str, Any]:
+def check_index_freshness(
+    metadata: dict[str, Any],
+    deep_dir: Path,
+    cache_seconds: int = DEFAULT_FRESHNESS_CACHE_SECONDS,
+    force: bool = False,
+) -> dict[str, Any]:
     source_path = deep_dir / "source-manifest.json"
     if not source_path.exists():
         return {"fresh": False, "reason": "source_manifest_missing"}
+    cache_path = deep_dir / ".freshness-cache.json"
+    source_stat = source_path.stat()
+    cache_key = {
+        "source_manifest_mtime_ns": source_stat.st_mtime_ns,
+        "source_manifest_size": source_stat.st_size,
+        "rules_fingerprint": str(metadata.get("rules_fingerprint") or ""),
+        "classifier_fingerprint": str(metadata.get("classifier_fingerprint") or ""),
+    }
+    if not force and cache_seconds > 0 and cache_path.exists():
+        try:
+            cached = load_json(cache_path)
+            checked_at = float(cached.get("checked_at") or 0)
+            if cached.get("cache_key") == cache_key and time.time() - checked_at <= cache_seconds:
+                result = dict(cached.get("result") or {})
+                result["cached"] = True
+                return result
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        result["cached"] = False
+        try:
+            cache_path.write_text(json.dumps({
+                "checked_at": time.time(),
+                "cache_key": cache_key,
+                "result": result,
+            }, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
+        return result
+
     source = load_json(source_path)
     excluded = {os.path.normcase(str(Path(value).resolve())) for value in source.get("excluded_paths", [])}
     expected = {
@@ -42,31 +80,31 @@ def check_index_freshness(metadata: dict[str, Any], deep_dir: Path) -> dict[str,
     for value in source.get("skills_roots", []):
         root = Path(value).expanduser().resolve()
         if not root.is_dir():
-            return {"fresh": False, "reason": "skills_root_missing", "path": str(root)}
+            return finish({"fresh": False, "reason": "skills_root_missing", "path": str(root)})
         for candidate in root.rglob("SKILL.md"):
             resolved = candidate.resolve()
             key = os.path.normcase(str(resolved))
             if key not in excluded:
                 current[key] = resolved
     if set(current) != set(expected):
-        return {
+        return finish({
             "fresh": False,
             "reason": "skill_set_changed",
             "added": len(set(current) - set(expected)),
             "removed": len(set(expected) - set(current)),
-        }
+        })
     for key, path in current.items():
         stat = path.stat()
         entry = expected[key]
         if stat.st_size != int(entry.get("file_length") or -1) or stat.st_mtime_ns != int(entry.get("last_write_ns") or -1):
-            return {"fresh": False, "reason": "skill_file_changed", "path": str(path)}
+            return finish({"fresh": False, "reason": "skill_file_changed", "path": str(path)})
     rules_path = Path(str(metadata.get("rules_path") or ""))
     if not rules_path.is_file() or sha256_file(rules_path) != str(metadata.get("rules_fingerprint") or ""):
-        return {"fresh": False, "reason": "classification_rules_changed"}
+        return finish({"fresh": False, "reason": "classification_rules_changed"})
     classifier_path = Path(str(metadata.get("classifier_path") or ""))
     if not classifier_path.is_file() or sha256_file(classifier_path) != str(metadata.get("classifier_fingerprint") or ""):
-        return {"fresh": False, "reason": "classifier_changed"}
-    return {"fresh": True, "reason": ""}
+        return finish({"fresh": False, "reason": "classifier_changed"})
+    return finish({"fresh": True, "reason": ""})
 
 
 def load_selection_memory(index_dir: Path, selected: dict[str, str]) -> dict[str, int]:
@@ -331,9 +369,11 @@ def run_facet_route(
     metadata: dict[str, Any],
     deep_dir: Path,
     keywords: dict[str, Any],
+    facets: dict[str, Any] | None = None,
+    cards: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    facets = load_json(deep_dir / "facets.json")
-    cards = load_json(deep_dir / "route-cards.json")
+    facets = facets if facets is not None else load_json(deep_dir / "facets.json")
+    cards = cards if cards is not None else load_json(deep_dir / "route-cards.json")
     leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
     candidate_ids, selected, shards = parse_facet_path(args.path, facets, cards, leaf_target)
     if not candidate_ids:
@@ -558,6 +598,9 @@ def main() -> int:
     parser.add_argument("--legacy-hierarchy", action="store_true", help="Use the canonical single-route hierarchy instead of multi-label facets.")
     parser.add_argument("--catalog-shards", action="store_true", help="Continue into alphabetical catalog shards when semantic facets are exhausted.")
     parser.add_argument("--allow-stale-index", action="store_true", help="Use an index even when its lightweight source manifest is stale.")
+    parser.add_argument("--auto-route", action="store_true", help="Walk the strongest category branches internally and return the final shortlist.")
+    parser.add_argument("--freshness-cache-seconds", type=int, default=DEFAULT_FRESHNESS_CACHE_SECONDS, help="Reuse a successful source freshness scan for this many seconds.")
+    parser.add_argument("--force-freshness-check", action="store_true", help="Ignore the freshness cache and rescan all configured skill roots.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -565,7 +608,12 @@ def main() -> int:
     deep_dir = index_dir / "deep"
     metadata = load_json(deep_dir / "metadata.json")
     if not args.allow_stale_index:
-        freshness = check_index_freshness(metadata, deep_dir)
+        freshness = check_index_freshness(
+            metadata,
+            deep_dir,
+            cache_seconds=max(0, args.freshness_cache_seconds),
+            force=args.force_freshness_check,
+        )
         if not freshness["fresh"]:
             roots = list(metadata.get("skills_roots") or [metadata.get("skills_root")])
             print(json.dumps({
@@ -579,7 +627,34 @@ def main() -> int:
     keyword_path = deep_dir / "label-keywords.json"
     keywords = load_json(keyword_path) if keyword_path.exists() else {}
     if not args.legacy_hierarchy and (deep_dir / "facets.json").exists() and (deep_dir / "route-cards.json").exists():
-        print(json.dumps(run_facet_route(args, metadata, deep_dir, keywords), ensure_ascii=False, indent=2))
+        facets = load_json(deep_dir / "facets.json")
+        cards = load_json(deep_dir / "route-cards.json")
+        result = run_facet_route(args, metadata, deep_dir, keywords, facets, cards)
+        route_trace: list[dict[str, Any]] = []
+        visited_paths = {args.path}
+        while args.auto_route and result.get("mode") == "choose_category":
+            branches = list(result.get("branches") or [])
+            if not branches:
+                break
+            selected_branch = max(
+                branches,
+                key=lambda item: (int(item.get("query_score") or 0), -int(item.get("count") or 0)),
+            )
+            selected_path = str(selected_branch.get("path") or "")
+            if not selected_path or selected_path in visited_paths:
+                break
+            route_trace.append({
+                "level": result.get("next_level", ""),
+                "selected": selected_branch.get("name", ""),
+                "path": selected_path,
+                "score": int(selected_branch.get("query_score") or 0),
+            })
+            visited_paths.add(selected_path)
+            args.path = selected_path
+            result = run_facet_route(args, metadata, deep_dir, keywords, facets, cards)
+        if args.auto_route:
+            result["route_trace"] = route_trace
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
     tree = load_json(deep_dir / "hierarchy.json")

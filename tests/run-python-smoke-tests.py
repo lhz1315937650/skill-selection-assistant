@@ -108,6 +108,8 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
     branch_debug = run_json(command + ["--show-branches"])
     assert_true(branch_debug["mode"] == "choose_category", "explicit taxonomy debugging should still expose category branches")
+    cached_freshness = run_json(command)
+    assert_true(cached_freshness["mode"] == "choose_skill", "cached freshness checks should preserve final routing behavior")
     compatible = run_json(command + ["--compat"])
     assert_true("deep_route" in compatible, "legacy consumers should be able to request the nested deep route payload")
     invalid = subprocess.run(
@@ -321,7 +323,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.7.2", "installer should report the installed version")
+    assert_true(installed["version"] == "1.7.3", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,

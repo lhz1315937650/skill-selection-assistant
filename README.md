@@ -169,6 +169,8 @@ The installed skill stores private runtime data in `.skill-index/`:
 
 Before recommendation, the router checks whether the deep index is missing, incomplete, corrupt, stale, or from an older schema. It repairs the index when needed and reuses unchanged classifications whenever possible.
 
+Large skill libraries use a five-minute local freshness cache so normal requests do not recursively scan every installed `SKILL.md` each time. Use `--force-freshness-check` when an immediate full source scan is required, or set `--freshness-cache-seconds 0` to disable reuse.
+
 Inspect the installed runtime:
 
 ```bash
@@ -240,7 +242,7 @@ The suites cover automatic final-candidate routing, explicit branch debugging, i
 Build a release package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.2
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.3
 ```
 
 ## Repository Layout
