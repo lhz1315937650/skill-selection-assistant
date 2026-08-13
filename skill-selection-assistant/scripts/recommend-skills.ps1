@@ -224,6 +224,7 @@ if (-not $Legacy) {
         scope = "installing-user-local-skills-exhaustive"
       }
       route = $deepResult.current
+      storage_model = $(if ($deepResult.storage_model) { [string]$deepResult.storage_model } else { "json_full" })
       route_trace = @($deepResult.route_trace)
       branches = @($deepResult.branches)
       candidates = @($deepResult.candidates)

@@ -101,6 +101,7 @@ def main() -> int:
         "failed_files": int(metadata.get("failed_files") or 0),
         "skills_roots": metadata.get("skills_roots", []),
         "recommendation_mode": recommendation.get("mode", ""),
+        "storage_model": recommendation.get("storage_model", "unknown"),
     })
     if valid_after:
         result["status"] = "degraded" if result["failed_files"] else "ok"

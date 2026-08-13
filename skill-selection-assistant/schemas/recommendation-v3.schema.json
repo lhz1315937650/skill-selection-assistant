@@ -11,6 +11,7 @@
     "mode": { "enum": ["choose_category", "choose_skill", "no_skills_installed", "index_stale", "error"] },
     "index": { "type": "object" },
     "route": { "type": "object" },
+    "storage_model": { "enum": ["sqlite_lazy", "json_full"] },
     "branches": { "type": "array", "items": { "type": "object" } },
     "candidates": { "type": "array", "items": { "type": "object" } },
     "next_step": { "type": "string" },

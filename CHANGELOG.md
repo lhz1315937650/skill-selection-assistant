@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.8.0 - 2026-08-13
+
+- added a SQLite lazy-routing index that loads only the active classification path and its final candidate cards
+- kept `facets.json` and `route-cards.json` as portable source and audit artifacts while making whole-JSON routing an explicit compatibility fallback
+- added an incrementally narrowed temporary candidate table so each selected category is intersected once per request
+- exposed `storage_model: sqlite_lazy` in recommendation output and retained the existing selection-model contract
+- added automatic JSON-to-SQLite conversion without re-reading or reclassifying installed `SKILL.md` files
+
 ## v1.7.3 - 2026-08-13
 
 - moved automatic category traversal into one `deep-route.py` process so large indexes are loaded and checked only once per recommendation

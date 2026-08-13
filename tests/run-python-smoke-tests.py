@@ -104,6 +104,8 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true(result["schema_version"] == "3.0.0", "unified recommender should expose an explicit schema")
     assert_true("deep_route" not in result, "default recommendation output should not duplicate the deep route payload")
     assert_true(result["mode"] == "choose_skill", "default recommendation should automatically reach a skill shortlist")
+    assert_true(result["storage_model"] == "sqlite_lazy", "default routing should use the SQLite lazy backend")
+    assert_true((index / "deep" / "lazy-route.sqlite3").exists(), "default routing should create the SQLite lazy index")
     assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
     branch_debug = run_json(command + ["--show-branches"])
@@ -323,7 +325,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.7.3", "installer should report the installed version")
+    assert_true(installed["version"] == "1.8.0", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,

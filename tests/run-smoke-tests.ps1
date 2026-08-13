@@ -168,6 +168,8 @@ try {
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "branches") "the unified envelope should expose branches at top level"
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "candidates") "the unified envelope should expose candidates at top level"
   Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
+  Assert-True ($deepRecommendation.storage_model -eq "sqlite_lazy") "default PowerShell recommendation should use SQLite lazy loading"
+  Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\lazy-route.sqlite3")) "default recommendation should create the SQLite lazy index"
   Assert-True (@($deepRecommendation.route_trace).Count -gt 0) "PowerShell recommendation should retain its internal route trace"
 
   Assert-True (Test-Path -LiteralPath $pythonRecommendScript) "cross-platform recommend-skills.py should exist"
@@ -336,7 +338,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.7.3" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.8.0" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

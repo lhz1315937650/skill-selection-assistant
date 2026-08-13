@@ -13,7 +13,7 @@ Treat this skill as a per-user compiler and router, not as a published catalog o
 
 1. Discover the installing user's configured local skill roots.
 2. Build or incrementally refresh a local multi-label index.
-3. Route the request one category at a time without loading the complete catalog into model context.
+3. Route the request through a SQLite lazy index, loading only the active classification path and final candidate cards.
 4. Present the smallest useful weighted shortlist in the user's language.
 5. Ask which skill to use.
 6. Read only the selected `SKILL.md`.

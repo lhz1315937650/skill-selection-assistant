@@ -14,6 +14,7 @@ It discovers the installing user's own skills, builds a private multi-level inde
 - Discovers one or more local skill roots.
 - Reads and classifies each `SKILL.md` into a local multi-label index.
 - Routes across domain, specialty, task, technology, output, and setup facets automatically.
+- Lazily queries only the selected classification path through a local SQLite index.
 - Returns only the final weighted candidates during normal use.
 - Loads a full skill body only after that skill is selected.
 - Keeps the selected skill active while the conversation remains in the same workflow.
@@ -47,6 +48,8 @@ primary domain -> detailed domain -> specialty -> task -> technology -> output -
 ```
 
 These facets narrow the candidate pool internally. Normal usage never asks the user to choose them. The `--show-branches` option exists only for taxonomy maintenance and debugging.
+
+Routing uses a local SQLite database by default. The reception step queries only category labels and counts. Each automatic category choice narrows a temporary candidate table once, and full candidate cards are read only after the route reaches its final leaf. Unselected categories are not decoded into Python objects and are never included in the model prompt.
 
 ## Quick Install
 
@@ -159,11 +162,14 @@ The installed skill stores private runtime data in `.skill-index/`:
 - `deep/skills-deep-index.ndjson`: one classified skill record per line.
 - `deep/facets.json`: multi-label inverted facets.
 - `deep/route-cards.json`: compact routing metadata.
+- `deep/lazy-route.sqlite3`: generated lazy-routing database used by normal requests.
 - `DETAILED_CLASSIFICATION.md`: a human-readable local catalog.
 - `domain-task-matrix.csv`: domain and task cross-tabulation.
 - `selection-memory.md`: local routing feedback.
 
 `.skill-index/` is never included in a release and should never be committed. This repository ships portable discovery, classification, and routing logic, not the publisher's skill list, absolute paths, or private index.
+
+`facets.json` and `route-cards.json` remain portable source and audit artifacts. On first use, `lazy-index.py` converts them to SQLite without reading the original skill bodies. Later requests open the database and query only the active route. Use `--json-router` on `deep-route.py` only when testing the compatibility fallback.
 
 ## Incremental Recovery
 
@@ -242,7 +248,7 @@ The suites cover automatic final-candidate routing, explicit branch debugging, i
 Build a release package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.3
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.0
 ```
 
 ## Repository Layout

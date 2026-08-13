@@ -187,6 +187,7 @@ def main() -> int:
             "scope": metadata.get("index_scope", "installing-user-local-skills-exhaustive"),
         },
         "route": deep_result.get("current", {}),
+        "storage_model": deep_result.get("storage_model", "json_full"),
         "route_trace": deep_result.get("route_trace", []),
         "branches": deep_result.get("branches", []),
         "candidates": deep_result.get("candidates", []),

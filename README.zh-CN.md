@@ -14,6 +14,7 @@
 - 自动发现一个或多个本地 skills 根目录。
 - 全文分类每个 `SKILL.md`，生成多标签本地索引。
 - 自动完成领域、专科、任务、技术、输出和环境要求路由。
+- 通过本地 SQLite 索引只查询当前选中的分类路径。
 - 默认只返回最终加权候选，不展示中间分类。
 - 仅在用户选定 skill 后读取其完整说明。
 - 同一工作流中持续使用已选 skill，避免每轮重复选择。
@@ -47,6 +48,8 @@
 ```
 
 这些分面只用于程序内部缩小候选范围。正常使用不会要求用户逐层分类。只有维护分类规则时，才需要显式使用 `--show-branches` 查看分支。
+
+默认路由使用本地 SQLite 数据库。前台阶段只查询分类名称和数量；每自动选择一级分类，只会把临时候选表缩小一次；到达最终叶子后，才读取该分类中的候选卡片。未选中的分类不会被解析成 Python 对象，也不会进入模型提示词。
 
 ## 快速安装
 
@@ -159,11 +162,14 @@ powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "�
 - `deep/skills-deep-index.ndjson`：逐项技能分类记录。
 - `deep/facets.json`：多标签倒排分面。
 - `deep/route-cards.json`：轻量路由卡片。
+- `deep/lazy-route.sqlite3`：普通请求使用的懒加载路由数据库。
 - `DETAILED_CLASSIFICATION.md`：人类可读的技能分类地图。
 - `domain-task-matrix.csv`：领域与任务类型交叉表。
 - `selection-memory.md`：本地选择反馈。
 
 `.skill-index/` 不会进入发布包，也不应提交到 Git。仓库发布的是扫描、分类和路由能力，不包含作者电脑上的 skill 清单、绝对路径或私有索引。
+
+`facets.json` 和 `route-cards.json` 会继续作为可移植的来源与审计文件。首次使用时，`lazy-index.py` 会直接把它们转换为 SQLite，不会重新读取原始 skill 正文。后续请求只打开数据库并查询当前路径。仅在兼容性测试时使用 `deep-route.py --json-router` 回退到旧的整份 JSON 路由。
 
 ## 增量与恢复
 
@@ -242,7 +248,7 @@ powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 构建发布包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.7.3
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.0
 ```
 
 ## 项目结构

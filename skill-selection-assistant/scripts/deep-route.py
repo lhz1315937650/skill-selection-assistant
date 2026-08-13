@@ -9,6 +9,9 @@ import json
 import math
 import os
 import re
+import sqlite3
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -23,6 +26,126 @@ DEFAULT_FRESHNESS_CACHE_SECONDS = 300
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
+class LazyRouteStore:
+    def __init__(self, database: Path):
+        self.connection = sqlite3.connect(database)
+        self.connection.row_factory = sqlite3.Row
+        self.selected: dict[str, str] = {}
+        self.connection.execute("CREATE TEMP TABLE active_candidates (skill_id TEXT PRIMARY KEY) WITHOUT ROWID")
+        self.connection.execute("INSERT INTO active_candidates(skill_id) SELECT skill_id FROM cards")
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def select(self, selected: dict[str, str]) -> None:
+        current_items = list(self.selected.items())
+        requested_items = list(selected.items())
+        common = 0
+        while common < min(len(current_items), len(requested_items)) and current_items[common] == requested_items[common]:
+            common += 1
+        if common != len(current_items):
+            self.connection.execute("DELETE FROM active_candidates")
+            self.connection.execute("INSERT INTO active_candidates(skill_id) SELECT skill_id FROM cards")
+            self.selected = {}
+            common = 0
+        for level, label in requested_items[common:]:
+            exists = self.connection.execute(
+                "SELECT 1 FROM facet_memberships WHERE level = ? AND label = ? LIMIT 1",
+                (level, label),
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"Facet not found: {level}={label}")
+            self.connection.execute(
+                """DELETE FROM active_candidates
+                   WHERE skill_id NOT IN (
+                       SELECT skill_id FROM facet_memberships WHERE level = ? AND label = ?
+                   )""",
+                (level, label),
+            )
+            self.selected[level] = label
+
+    def levels(self) -> list[str]:
+        return [str(row[0]) for row in self.connection.execute("SELECT name FROM levels ORDER BY position")]
+
+    def candidate_count(self) -> int:
+        row = self.connection.execute("SELECT COUNT(*) FROM active_candidates").fetchone()
+        return int(row[0])
+
+    def branches(self, level: str) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            """SELECT fm.label, COUNT(*) AS count
+                FROM facet_memberships fm
+                JOIN active_candidates active ON active.skill_id = fm.skill_id
+                WHERE fm.level = ?
+                GROUP BY fm.label""",
+            (level,),
+        )
+        return [{"level": level, "name": str(row["label"]), "display_name": str(row["label"]), "count": int(row["count"])} for row in rows]
+
+    def name_matching_labels(
+        self,
+        level: str,
+        query_tokens: set[str],
+    ) -> set[str]:
+        useful = sorted({token.lower() for token in query_tokens if token not in GENERIC_NAME_ROUTE_TOKENS and len(token) >= 3})
+        if not useful:
+            return set()
+        name_clauses = " OR ".join("LOWER(c.canonical_name) LIKE ?" for _ in useful)
+        rows = self.connection.execute(
+            f"""SELECT DISTINCT fm.label
+                FROM facet_memberships fm
+                JOIN cards c ON c.skill_id = fm.skill_id
+                JOIN active_candidates active ON active.skill_id = c.skill_id
+                WHERE fm.level = ? AND ({name_clauses})""",
+            [level, *[f"%{token}%" for token in useful]],
+        )
+        return {str(row[0]) for row in rows}
+
+    def cards(self) -> list[dict[str, Any]]:
+        rows = self.connection.execute(
+            "SELECT c.* FROM cards c JOIN active_candidates active ON active.skill_id = c.skill_id"
+        )
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            item = dict(row)
+            item["capability_tags"] = json.loads(item.pop("capability_tags"))
+            item["setup_requirements"] = json.loads(item.pop("setup_requirements"))
+            result.append(item)
+        return result
+
+
+def lazy_database_is_current(database: Path, deep_dir: Path) -> bool:
+    if not database.exists():
+        return False
+    try:
+        signature_parts = []
+        for name in ("facets.json", "route-cards.json"):
+            stat = (deep_dir / name).stat()
+            signature_parts.append(f"{name}:{stat.st_size}:{stat.st_mtime_ns}")
+        signature = "|".join(signature_parts)
+        with sqlite3.connect(database) as connection:
+            values = dict(connection.execute("SELECT key, value FROM metadata"))
+        return values.get("schema_version") == "1.0.0" and values.get("source_signature") == signature
+    except (OSError, sqlite3.Error):
+        return False
+
+
+def ensure_lazy_database(deep_dir: Path, script_dir: Path) -> Path | None:
+    database = deep_dir / "lazy-route.sqlite3"
+    if lazy_database_is_current(database, deep_dir):
+        return database
+    builder = script_dir / "lazy-index.py"
+    if not builder.exists():
+        return None
+    result = subprocess.run(
+        [sys.executable, str(builder), "--index-dir", str(deep_dir.parent), "--compact"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    return database if result.returncode == 0 and lazy_database_is_current(database, deep_dir) else None
 
 
 def sha256_file(path: Path) -> str:
@@ -364,6 +487,181 @@ def matched_tags(card: dict[str, Any], query_tokens: set[str], selected: dict[st
     return list(dict.fromkeys(result))[:8]
 
 
+def parse_selected_facets(path: str) -> dict[str, str]:
+    selected: dict[str, str] = {}
+    for segment in [value for value in path.split("|") if value]:
+        if "=" not in segment:
+            raise ValueError(f"Invalid path segment: {segment}")
+        level, label = segment.split("=", 1)
+        if level.startswith("catalog_shard_"):
+            raise ValueError("Catalog shards require the JSON compatibility router")
+        if level in selected:
+            raise ValueError(f"Facet level selected more than once: {level}")
+        selected[level] = label
+    return selected
+
+
+def rank_final_cards(
+    args: argparse.Namespace,
+    cards: list[dict[str, Any]],
+    query_tokens: set[str],
+    raw_query_tokens: set[str],
+    selected: dict[str, str],
+    index_dir: Path,
+) -> tuple[list[dict[str, Any]], int, int]:
+    memory_scores = load_selection_memory(index_dir, selected)
+    cards.sort(key=lambda item: (
+        -(skill_score(item, query_tokens, raw_query_tokens) + memory_scores.get(str(item.get("canonical_name") or ""), 0)),
+        item.get("name", ""),
+    ))
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in cards:
+        grouped.setdefault(str(item.get("canonical_name") or item.get("name") or ""), []).append(item)
+    visible = [variants[0] for variants in grouped.values()]
+    scored_visible = []
+    for item in visible:
+        memory_score = memory_scores.get(str(item.get("canonical_name") or ""), 0)
+        scored_visible.append({
+            "card": item,
+            "score": skill_score(item, query_tokens, raw_query_tokens) + memory_score,
+            "memory_score": memory_score,
+        })
+    if scored_visible:
+        top_score = scored_visible[0]["score"]
+        if top_score > 0:
+            returned = [item for item in scored_visible if item["score"] >= top_score - args.candidate_score_window][: args.limit]
+            target_minimum = min(3, args.limit, len(scored_visible))
+            if len(returned) < target_minimum:
+                returned_ids = {str(item["card"].get("skill_id") or "") for item in returned}
+                for item in scored_visible:
+                    skill_id = str(item["card"].get("skill_id") or "")
+                    if skill_id in returned_ids:
+                        continue
+                    returned.append(item)
+                    returned_ids.add(skill_id)
+                    if len(returned) >= target_minimum:
+                        break
+        else:
+            returned = scored_visible[: args.limit]
+    else:
+        returned = []
+    result_candidates: list[dict[str, Any]] = []
+    for entry in returned:
+        item = entry["card"]
+        tags = list(item.get("capability_tags") or [])
+        candidate = {
+            "name": item["name"],
+            "function_summary": item.get("function_summary", "") if args.verbose else item.get("function_summary", "")[:220],
+            "matched_tags": matched_tags(item, query_tokens, selected),
+            "tag_count": len(tags),
+            "setup_level": item.get("setup_level", "unknown"),
+            "setup_requirements": item.get("setup_requirements") or [item.get("setup_level", "unknown")],
+            "origin": item.get("origin", "unknown"),
+            "skill_md": item.get("skill_md", ""),
+            "logical_skill_md": item.get("logical_skill_md") or item.get("skill_md", ""),
+            "visible_variant_count": len(grouped[str(item.get("canonical_name") or item.get("name") or "")]),
+            "score": entry["score"],
+        }
+        if entry["memory_score"]:
+            candidate["memory_score"] = entry["memory_score"]
+        if args.verbose:
+            candidate["capability_tags"] = tags
+        result_candidates.append(candidate)
+    return result_candidates, len(visible), len(cards)
+
+
+def run_lazy_facet_route(
+    args: argparse.Namespace,
+    metadata: dict[str, Any],
+    store: LazyRouteStore,
+    keywords: dict[str, Any],
+    index_dir: Path,
+) -> dict[str, Any]:
+    selected = parse_selected_facets(args.path)
+    store.select(selected)
+    candidate_count = store.candidate_count()
+    if not candidate_count:
+        return {
+            "mode": "no_skills_installed",
+            "selection_model": "multi_label_facet_intersection",
+            "storage_model": "sqlite_lazy",
+            "query": args.query,
+            "current": {"candidate_count": 0, "selected_facets": selected, "catalog_shards": [], "path": args.path},
+            "candidate_pool": 0,
+            "content_variant_pool": 0,
+            "returned_candidates": 0,
+            "candidates": [],
+            "instruction": "No installed local skills are available. Offer to answer directly, install a skill, or create a new skill.",
+        }
+
+    raw_query_tokens = tokens(args.query)
+    query_tokens = expand_query_tokens(args.query, keywords)
+    skipped_levels: list[str] = []
+    branch_level = ""
+    branches: list[dict[str, Any]] = []
+    leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
+    if candidate_count > leaf_target:
+        for level in store.levels():
+            if level in selected:
+                continue
+            level_branches = store.branches(level)
+            name_matches = store.name_matching_labels(level, raw_query_tokens)
+            for item in level_branches:
+                item["semantic_score"] = semantic_label_score(item, args.query, query_tokens, keywords)
+                item["query_score"] = item["semantic_score"] + (160 if item["name"] in name_matches else 0)
+                item["path"] = f"{args.path}|{level}={item['name']}" if args.path else f"{level}={item['name']}"
+            full_branches = [item for item in level_branches if item["count"] == candidate_count]
+            reducing = [item for item in level_branches if item["count"] < candidate_count]
+            best_full = max(full_branches, key=lambda item: item["query_score"], default=None)
+            best_reducing_score = max((item["query_score"] for item in reducing), default=0)
+            if best_full and best_full["query_score"] > 0 and best_full["query_score"] >= best_reducing_score:
+                skipped_levels.append(f"{level}={best_full['name']} (matched but non-reducing)")
+                continue
+            if reducing:
+                reducing.sort(key=lambda item: (-item["query_score"], item["count"] if item["semantic_score"] > 0 else -item["count"], item["name"]))
+                if reducing[0]["semantic_score"] <= 0 and reducing[0]["name"] not in name_matches:
+                    skipped_levels.append(f"{level} (no explicit semantic evidence)")
+                    break
+                branch_level = level
+                branches = dynamic_window(reducing, args.limit, args.branch_score_window, minimum=2)
+                break
+            skipped_levels.append(level)
+
+    if branches:
+        return {
+            "mode": "choose_category",
+            "selection_model": "multi_label_facet_intersection",
+            "storage_model": "sqlite_lazy",
+            "query": args.query,
+            "current": {"candidate_count": candidate_count, "selected_facets": selected, "catalog_shards": [], "path": args.path},
+            "auto_skipped_non_reducing_levels": skipped_levels,
+            "next_level": branch_level,
+            "branches": [{key: item[key] for key in ("name", "display_name", "count", "path", "query_score")} for item in branches],
+            "returned_branches": len(branches),
+            "instruction": "Present only these compact branches. Ask the user to choose one, then continue with its exact path.",
+        }
+
+    cards = store.cards()
+    candidates, candidate_pool, content_variant_pool = rank_final_cards(
+        args, cards, query_tokens, raw_query_tokens, selected, index_dir
+    )
+    return {
+        "mode": "choose_skill",
+        "selection_model": "multi_label_facet_intersection",
+        "storage_model": "sqlite_lazy",
+        "query": args.query,
+        "current": {"candidate_count": candidate_count, "selected_facets": selected, "catalog_shards": [], "path": args.path},
+        "candidate_pool": candidate_pool,
+        "content_variant_pool": content_variant_pool,
+        "returned_candidates": len(candidates),
+        "candidates": candidates,
+        "instruction": (
+            "Present only each candidate's name, function_summary as its description, and score as its weight. "
+            "Ask which skill to activate. Read only the chosen SKILL.md after selection."
+        ),
+    }
+
+
 def run_facet_route(
     args: argparse.Namespace,
     metadata: dict[str, Any],
@@ -601,6 +899,7 @@ def main() -> int:
     parser.add_argument("--auto-route", action="store_true", help="Walk the strongest category branches internally and return the final shortlist.")
     parser.add_argument("--freshness-cache-seconds", type=int, default=DEFAULT_FRESHNESS_CACHE_SECONDS, help="Reuse a successful source freshness scan for this many seconds.")
     parser.add_argument("--force-freshness-check", action="store_true", help="Ignore the freshness cache and rescan all configured skill roots.")
+    parser.add_argument("--json-router", action="store_true", help="Use the legacy whole-JSON facet router instead of SQLite lazy loading.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -626,6 +925,40 @@ def main() -> int:
             return 0
     keyword_path = deep_dir / "label-keywords.json"
     keywords = load_json(keyword_path) if keyword_path.exists() else {}
+    if not args.legacy_hierarchy and not args.json_router:
+        database = ensure_lazy_database(deep_dir, script_dir)
+        if database is not None:
+            store = LazyRouteStore(database)
+            try:
+                result = run_lazy_facet_route(args, metadata, store, keywords, index_dir)
+                route_trace: list[dict[str, Any]] = []
+                visited_paths = {args.path}
+                while args.auto_route and result.get("mode") == "choose_category":
+                    branches = list(result.get("branches") or [])
+                    if not branches:
+                        break
+                    selected_branch = max(
+                        branches,
+                        key=lambda item: (int(item.get("query_score") or 0), -int(item.get("count") or 0)),
+                    )
+                    selected_path = str(selected_branch.get("path") or "")
+                    if not selected_path or selected_path in visited_paths:
+                        break
+                    route_trace.append({
+                        "level": result.get("next_level", ""),
+                        "selected": selected_branch.get("name", ""),
+                        "path": selected_path,
+                        "score": int(selected_branch.get("query_score") or 0),
+                    })
+                    visited_paths.add(selected_path)
+                    args.path = selected_path
+                    result = run_lazy_facet_route(args, metadata, store, keywords, index_dir)
+                if args.auto_route:
+                    result["route_trace"] = route_trace
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            finally:
+                store.close()
     if not args.legacy_hierarchy and (deep_dir / "facets.json").exists() and (deep_dir / "route-cards.json").exists():
         facets = load_json(deep_dir / "facets.json")
         cards = load_json(deep_dir / "route-cards.json")
