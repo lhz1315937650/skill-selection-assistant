@@ -29,7 +29,7 @@
 用户请求
    |
    v
-本地索引新鲜度检查
+打开预先构建的本地索引
    |
    v
 自动多级路由（内部完成）
@@ -171,11 +171,11 @@ powershell -ExecutionPolicy Bypass -File scripts/recommend-skills.ps1 -Query "�
 
 `facets.json` 和 `route-cards.json` 会继续作为可移植的来源与审计文件。首次使用时，`lazy-index.py` 会直接把它们转换为 SQLite，不会重新读取原始 skill 正文。后续请求只打开数据库并查询当前路径。仅在兼容性测试时使用 `deep-route.py --json-router` 回退到旧的整份 JSON 路由。
 
-## 增量与恢复
+## 索引生命周期与恢复
 
-推荐前会检查本地索引是否缺失、不完整、损坏、过期或协议版本过旧。需要时自动修复，并尽量只重新分类新增或修改的文件。
+全量分类只发生在安装、更新或显式维护时。普通推荐只校验必需的索引文件，打开 SQLite，然后查询当前命中的分类路径；即使旧的新鲜度缓存已经过期，也不会递归枚举 skills 根目录中的全部 `SKILL.md`。
 
-大型 skill 库默认使用 5 分钟的本地新鲜度缓存，避免每次请求都递归扫描所有 `SKILL.md`。如需立刻完整扫描，可使用 `--force-freshness-check`；使用 `--freshness-cache-seconds 0` 可禁用缓存复用。
+确实需要在当前请求中核对全部来源时，显式使用 `--strict-freshness`。`--force-freshness-check` 同样会进入严格模式，并忽略以前的严格检查缓存。PowerShell 对应参数为 `-StrictFreshness`。
 
 手动诊断：
 
@@ -192,6 +192,7 @@ python scripts/doctor.py --fix
 完全重建分类：
 
 ```bash
+python scripts/recommend-skills.py --query "health check" --strict-freshness
 python scripts/recommend-skills.py --query "health check" --full-rebuild
 ```
 
@@ -248,7 +249,7 @@ powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 构建发布包：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.0
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.1
 ```
 
 ## 项目结构

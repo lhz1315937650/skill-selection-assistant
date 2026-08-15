@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.8.1 - 2026-08-15
+
+- removed recursive source-library scans from the normal Python and PowerShell recommendation paths
+- made installation, update, doctor, and explicit strict freshness checks responsible for source reclassification
+- added `--strict-freshness` and `-StrictFreshness` for callers that intentionally need blocking whole-library verification
+- exposed `freshness_policy` and index generation time in recommendation metadata
+- kept normal routing on the SQLite lazy index even when the old freshness-cache timestamp has expired
+
 ## v1.8.0 - 2026-08-13
 
 - added a SQLite lazy-routing index that loads only the active classification path and its final candidate cards

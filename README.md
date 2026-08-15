@@ -29,7 +29,7 @@ It discovers the installing user's own skills, builds a private multi-level inde
 User request
     |
     v
-Local index freshness check
+Open the prebuilt local index
     |
     v
 Automatic multi-level routing (internal)
@@ -171,11 +171,11 @@ The installed skill stores private runtime data in `.skill-index/`:
 
 `facets.json` and `route-cards.json` remain portable source and audit artifacts. On first use, `lazy-index.py` converts them to SQLite without reading the original skill bodies. Later requests open the database and query only the active route. Use `--json-router` on `deep-route.py` only when testing the compatibility fallback.
 
-## Incremental Recovery
+## Index Lifecycle And Recovery
 
-Before recommendation, the router checks whether the deep index is missing, incomplete, corrupt, stale, or from an older schema. It repairs the index when needed and reuses unchanged classifications whenever possible.
+Classification happens during installation, update, or an explicit maintenance command. Normal recommendations validate required index artifacts, open SQLite, and query only the selected category path. They never recursively enumerate the source skill roots, even when an old freshness-cache timestamp has expired.
 
-Large skill libraries use a five-minute local freshness cache so normal requests do not recursively scan every installed `SKILL.md` each time. Use `--force-freshness-check` when an immediate full source scan is required, or set `--freshness-cache-seconds 0` to disable reuse.
+Use `--strict-freshness` when a request must block until every configured root has been compared with the source manifest. `--force-freshness-check` also enables strict mode and bypasses any previous strict-check cache. The PowerShell equivalent is `-StrictFreshness`.
 
 Inspect the installed runtime:
 
@@ -192,6 +192,7 @@ python scripts/doctor.py --fix
 Request a complete reclassification:
 
 ```bash
+python scripts/recommend-skills.py --query "health check" --strict-freshness
 python scripts/recommend-skills.py --query "health check" --full-rebuild
 ```
 
@@ -248,7 +249,7 @@ The suites cover automatic final-candidate routing, explicit branch debugging, i
 Build a release package:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.0
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.1
 ```
 
 ## Repository Layout

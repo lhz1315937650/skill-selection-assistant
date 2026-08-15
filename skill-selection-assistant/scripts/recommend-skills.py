@@ -84,6 +84,7 @@ def main() -> int:
     parser.add_argument("--full-rebuild", action="store_true")
     parser.add_argument("--freshness-cache-seconds", type=int, default=300)
     parser.add_argument("--force-freshness-check", action="store_true")
+    parser.add_argument("--strict-freshness", action="store_true", help="Block the request until all configured skill roots are verified.")
     parser.add_argument("--compat", action="store_true", help="Include the deprecated nested deep_route object.")
     parser.add_argument("--compact", action="store_true", help="Emit compact JSON for lower token and logging overhead.")
     parser.add_argument(
@@ -132,6 +133,9 @@ def main() -> int:
     if not index_valid:
         raise RuntimeError(f"Deep index remains unusable after refresh: {remaining_problem}")
 
+    metadata = load_json(metadata_path)
+    strict_freshness = bool(args.strict_freshness or args.force_freshness_check)
+
     route_command = [
         sys.executable,
         str(router),
@@ -144,7 +148,10 @@ def main() -> int:
     ]
     if not args.show_branches:
         route_command.append("--auto-route")
-    route_command.extend(["--freshness-cache-seconds", str(max(0, args.freshness_cache_seconds))])
+    if strict_freshness:
+        route_command.extend(["--freshness-cache-seconds", str(max(0, args.freshness_cache_seconds))])
+    else:
+        route_command.append("--allow-stale-index")
     if args.force_freshness_check:
         route_command.append("--force-freshness-check")
     if args.path:
@@ -185,6 +192,8 @@ def main() -> int:
             "skills_root": (metadata.get("skills_roots") or roots or [""])[0],
             "skills_roots": metadata.get("skills_roots", roots),
             "scope": metadata.get("index_scope", "installing-user-local-skills-exhaustive"),
+            "freshness_policy": "strict" if strict_freshness else "explicit",
+            "generated_at": metadata.get("generated_at", ""),
         },
         "route": deep_result.get("current", {}),
         "storage_model": deep_result.get("storage_model", "json_full"),

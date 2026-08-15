@@ -10,6 +10,7 @@ param(
   [string]$IndexDir = "",
   [string[]]$SkillsRoot = @(),
   [string]$Path = "",
+  [switch]$StrictFreshness,
   [switch]$Legacy,
   [switch]$Compat
 )
@@ -137,11 +138,25 @@ $summaryPath = Join-Path $IndexDir "route-summary.json"
 $manifestPath = Join-Path $IndexDir "manifest.json"
 $routerSkillPath = Join-Path (Split-Path -Parent $PSScriptRoot) "SKILL.md"
 $indexRefreshReason = ""
-$needsScan = (-not (Test-Path -LiteralPath $summaryPath))
+$needsScan = (-not (Test-Path -LiteralPath $summaryPath)) -or (-not (Test-Path -LiteralPath $manifestPath))
 if ($needsScan) {
   $indexRefreshReason = "index_missing"
 }
-elseif (Test-LocalIndexStale -ManifestPath $manifestPath -ExplicitSkillsRoot $PrimarySkillsRoot -RouterSkillPath $routerSkillPath) {
+elseif ($PrimarySkillsRoot) {
+  try {
+    $manifestRoot = Get-ResolvedPathOrEmpty -Path ([string](Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json).skills_root)
+    $requestedRoot = Get-ResolvedPathOrEmpty -Path $PrimarySkillsRoot
+    if ((-not $requestedRoot) -or ($requestedRoot -ne $manifestRoot)) {
+      $needsScan = $true
+      $indexRefreshReason = "skills_roots_changed"
+    }
+  }
+  catch {
+    $needsScan = $true
+    $indexRefreshReason = "index_invalid"
+  }
+}
+if ((-not $needsScan) -and $StrictFreshness -and (Test-LocalIndexStale -ManifestPath $manifestPath -ExplicitSkillsRoot $PrimarySkillsRoot -RouterSkillPath $routerSkillPath)) {
   $needsScan = $true
   $indexRefreshReason = "local_skill_library_changed"
 }
@@ -200,6 +215,7 @@ if (-not $Legacy) {
     }
 
     $deepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }), "--auto-route")
+    if (-not $StrictFreshness) { $deepArgs += "--allow-stale-index" }
     if ($Path) { $deepArgs += @("--path", $Path) }
     $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     if ($deepResult.mode -eq "index_stale") {
@@ -210,6 +226,7 @@ if (-not $Legacy) {
       $deepWasRefreshed = $true
       $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     }
+    $currentDeepMetadata = $(if (Test-Path -LiteralPath $deepMetadataPath) { Get-Content -LiteralPath $deepMetadataPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null })
 
     $deepEnvelope = [ordered]@{
       schema_version = "3.0.0"
@@ -222,6 +239,8 @@ if (-not $Legacy) {
         skills_root = $manifestForDeep.skills_root
         skills_roots = @($deepRoots)
         scope = "installing-user-local-skills-exhaustive"
+        freshness_policy = $(if ($StrictFreshness) { "strict" } else { "explicit" })
+        generated_at = $(if ($currentDeepMetadata -and ($currentDeepMetadata.PSObject.Properties.Name -contains "generated_at")) { [string]$currentDeepMetadata.generated_at } else { "" })
       }
       route = $deepResult.current
       storage_model = $(if ($deepResult.storage_model) { [string]$deepResult.storage_model } else { "json_full" })

@@ -169,6 +169,7 @@ try {
   Assert-True ($deepRecommendation.PSObject.Properties.Name -contains "candidates") "the unified envelope should expose candidates at top level"
   Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
   Assert-True ($deepRecommendation.storage_model -eq "sqlite_lazy") "default PowerShell recommendation should use SQLite lazy loading"
+  Assert-True ($deepRecommendation.index.freshness_policy -eq "explicit") "normal PowerShell routing should not scan the whole skill library"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\lazy-route.sqlite3")) "default recommendation should create the SQLite lazy index"
   Assert-True (@($deepRecommendation.route_trace).Count -gt 0) "PowerShell recommendation should retain its internal route trace"
 
@@ -225,7 +226,7 @@ try {
   $staleDeepResult = (& python $deepRouteScript --query "deploy a Kubernetes application" --index-dir $freshnessIndexDir --force-freshness-check | Out-String | ConvertFrom-Json)
   Assert-True ($staleDeepResult.mode -eq "index_stale") "deep router should refuse stale per-user classifications"
   Assert-True ($staleDeepResult.freshness.reason -eq "skill_set_changed") "deep freshness result should explain that the installed skill set changed"
-  $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot -Legacy | Out-String | ConvertFrom-Json)
+  $refreshedRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot -StrictFreshness -Legacy | Out-String | ConvertFrom-Json)
   $afterRefresh = Read-Json -Path (Join-Path $freshnessIndexDir "skills-index.json")
   Assert-True ($refreshedRecommendation.index.refreshed -eq $true) "recommendation should refresh when the installing user's local skill library changes"
   Assert-True ($refreshedRecommendation.index.refresh_reason -eq "local_skill_library_changed") "stale-index refresh should expose the local-library change reason"
@@ -241,7 +242,7 @@ try {
     Assert-True (Test-Path -LiteralPath $candidate.skill_md) "every recommendation should point to an installed SKILL.md"
     Assert-True ($installedSkillPaths -contains [string]$candidate.skill_md) "recommendations should come only from the scanned installing-user skills root"
   }
-  $refreshedDeepRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot | Out-String | ConvertFrom-Json)
+  $refreshedDeepRecommendation = (& $recommendScript -Query "deploy a Kubernetes application" -Limit 3 -IndexDir $freshnessIndexDir -SkillsRoot $freshnessRoot -StrictFreshness | Out-String | ConvertFrom-Json)
   Assert-True ($refreshedDeepRecommendation.engine -eq "deep_hospital") "default recommendation should rebuild and use a stale deep index"
   Assert-True ($refreshedDeepRecommendation.index.refreshed -eq $true) "deep recommendation should report a source-manifest refresh"
   Assert-True ($refreshedDeepRecommendation.mode -ne "index_stale") "default recommendation should not expose stale deep results after rebuilding"
@@ -338,7 +339,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.8.0" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.8.1" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

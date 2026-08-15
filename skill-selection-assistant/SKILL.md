@@ -114,7 +114,7 @@ Never expose an internal traceback for an empty library.
 
 ### `index_stale`
 
-Refresh the index through the recommender before selecting. Do not recommend from stale classifications.
+This mode is returned only during explicit strict freshness checks. Refresh the index through the recommender before selecting.
 
 ## Recommendation Rules
 
@@ -187,7 +187,7 @@ On first installation:
 
 On later refreshes, reuse unchanged classifications and read only added or modified skill files when schema, classifier, and rules fingerprints remain compatible.
 
-Before routing, validate the required deep artifacts and schema. Rebuild missing, incomplete, corrupt, or old-schema indexes, recovering configured roots from `source-manifest.json` when possible. Use `python scripts/doctor.py --fix` for explicit cross-platform repair.
+Before normal routing, validate the required deep artifacts and schema only. Do not recursively enumerate configured skill roots or compare every source `SKILL.md` during an ordinary request. Source-library freshness belongs to installation, update, `doctor --fix`, or an explicit `--strict-freshness` request. Rebuild missing, incomplete, corrupt, or old-schema indexes, recovering configured roots from `source-manifest.json` when possible.
 
 If failures exist, treat the index as `degraded`, report `failed_files`, and continue only with successfully classified skills. Use `--strict` for CI or audits that must fail on any classification error.
 

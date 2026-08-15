@@ -105,13 +105,20 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true("deep_route" not in result, "default recommendation output should not duplicate the deep route payload")
     assert_true(result["mode"] == "choose_skill", "default recommendation should automatically reach a skill shortlist")
     assert_true(result["storage_model"] == "sqlite_lazy", "default routing should use the SQLite lazy backend")
+    assert_true(result["index"]["freshness_policy"] == "explicit", "normal routing should never scan all source skills for freshness")
     assert_true((index / "deep" / "lazy-route.sqlite3").exists(), "default routing should create the SQLite lazy index")
     assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
     branch_debug = run_json(command + ["--show-branches"])
     assert_true(branch_debug["mode"] == "choose_category", "explicit taxonomy debugging should still expose category branches")
-    cached_freshness = run_json(command)
-    assert_true(cached_freshness["mode"] == "choose_skill", "cached freshness checks should preserve final routing behavior")
+    freshness_cache = index / "deep" / ".freshness-cache.json"
+    freshness_cache.unlink(missing_ok=True)
+    explicit_freshness = run_json(command)
+    assert_true(explicit_freshness["mode"] == "choose_skill", "explicit freshness policy should preserve final routing behavior")
+    assert_true(not freshness_cache.exists(), "normal recommendation must not create a whole-library freshness cache")
+    strict_freshness = run_json(command + ["--strict-freshness"])
+    assert_true(strict_freshness["index"]["freshness_policy"] == "strict", "strict mode should remain available for explicit source verification")
+    assert_true(freshness_cache.exists(), "strict freshness should record its completed source verification")
     compatible = run_json(command + ["--compat"])
     assert_true("deep_route" in compatible, "legacy consumers should be able to request the nested deep route payload")
     invalid = subprocess.run(
@@ -325,7 +332,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.8.0", "installer should report the installed version")
+    assert_true(installed["version"] == "1.8.1", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,
