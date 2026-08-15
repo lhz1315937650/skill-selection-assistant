@@ -327,8 +327,15 @@ try {
   Assert-True ([int]$selfOnlyRecommendation.selection.returned -eq 0) "self-only skills root should return no recommendations instead of recommending itself"
 
   Assert-True (Test-Path -LiteralPath $cleanScript) "clean-local-artifacts.ps1 should exist"
+  $cleanupFixture = Join-Path $repoRoot "tests\__pycache__\cleanup-fixture.pyc"
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cleanupFixture) | Out-Null
+  Set-Content -LiteralPath $cleanupFixture -Value "generated test cache" -Encoding UTF8
   $cleanPreview = (& $cleanScript -WhatIf | Out-String | ConvertFrom-Json)
   Assert-True ($cleanPreview.WhatIf -eq $true) "clean-local-artifacts.ps1 -WhatIf should be safe to preview"
+  Assert-True (Test-Path -LiteralPath $cleanupFixture) "cleanup preview should not remove cache artifacts"
+  $cleanResult = (& $cleanScript | Out-String | ConvertFrom-Json)
+  Assert-True (-not (Test-Path -LiteralPath $cleanupFixture)) "cleanup should remove recursive Python cache artifacts"
+  Assert-True (@($cleanResult.Removed | Where-Object { $_ -like "*__pycache__" }).Count -gt 0) "cleanup should report removed cache directories"
 
   Assert-True (Test-Path -LiteralPath $packageScript) "package-release.ps1 should exist"
   $mismatchedPackageRejected = $false

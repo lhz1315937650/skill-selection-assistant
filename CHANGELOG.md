@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 - added `--strict-freshness` and `-StrictFreshness` for callers that intentionally need blocking whole-library verification
 - exposed `freshness_policy` and index generation time in recommendation metadata
 - kept normal routing on the SQLite lazy index even when the old freshness-cache timestamp has expired
+- expanded repository cleanup to remove Python, test, type-checker, linter, and coverage caches
+- rewrote the English and Chinese project introductions around the current lazy-loading architecture and maintenance model
 
 ## v1.8.0 - 2026-08-13
 
