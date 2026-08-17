@@ -11,12 +11,15 @@ param(
   [int]$FallbackMinCandidates = 2,
   [int]$FallbackStrongScore = 60,
   [int]$FallbackRecallLimit = 30,
+  [string]$Context = "",
+  [string]$ProjectDir = "",
   [string]$IndexDir = "",
   [string[]]$SkillsRoot = @(),
   [string]$Path = "",
   [switch]$StrictFreshness,
   [switch]$DisableFallback,
   [switch]$ForceFallback,
+  [switch]$NoProjectContext,
   [switch]$Legacy,
   [switch]$Compat
 )
@@ -234,6 +237,9 @@ if (-not $Legacy) {
     if (-not $StrictFreshness) { $deepArgs += "--allow-stale-index" }
     if ($DisableFallback) { $deepArgs += "--disable-fallback" }
     if ($ForceFallback) { $deepArgs += "--force-fallback" }
+    if ($Context) { $deepArgs += @("--context", $Context) }
+    if ($ProjectDir) { $deepArgs += @("--project-dir", $ProjectDir) }
+    if ($NoProjectContext) { $deepArgs += "--no-project-context" }
     if ($Path) { $deepArgs += @("--path", $Path) }
     $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     if ($deepResult.mode -eq "index_stale") {
@@ -261,6 +267,8 @@ if (-not $Legacy) {
         generated_at = $(if ($currentDeepMetadata -and ($currentDeepMetadata.PSObject.Properties.Name -contains "generated_at")) { [string]$currentDeepMetadata.generated_at } else { "" })
       }
       route = $deepResult.current
+      context = $(if ($deepResult.context) { $deepResult.context } else { [pscustomobject]@{} })
+      selection_pipeline = @($deepResult.selection_pipeline)
       selection_model = $(if ($deepResult.selection_model) { [string]$deepResult.selection_model } else { "multi_label_facet_intersection" })
       storage_model = $(if ($deepResult.storage_model) { [string]$deepResult.storage_model } else { "json_full" })
       route_trace = @($deepResult.route_trace)

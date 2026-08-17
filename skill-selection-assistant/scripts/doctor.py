@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 
-DEEP_SCHEMA_VERSION = "2.5.0"
+DEEP_SCHEMA_VERSION = "2.6.0"
 REQUIRED_ROUTING_FILES = ("metadata.json", "source-manifest.json", "hierarchy.json", "facets.json", "route-cards.json", "label-keywords.json")
 
 

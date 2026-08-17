@@ -28,6 +28,101 @@ def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
+def collect_project_context(project_dir: Path) -> dict[str, Any]:
+    context: dict[str, Any] = {
+        "project_dir": str(project_dir),
+        "project_name": project_dir.name,
+        "markers": [],
+        "technologies": [],
+        "business_signals": [],
+    }
+    if not project_dir.is_dir():
+        context["routing_text"] = ""
+        return context
+
+    marker_tech = {
+        "package.json": ["javascript", "typescript", "node", "frontend"],
+        "pyproject.toml": ["python"],
+        "requirements.txt": ["python"],
+        "go.mod": ["go"],
+        "Cargo.toml": ["rust"],
+        "pom.xml": ["java", "maven"],
+        "build.gradle": ["java", "gradle"],
+        "build.gradle.kts": ["kotlin", "gradle"],
+        "composer.json": ["php"],
+        "Gemfile": ["ruby"],
+    }
+    technologies: list[str] = []
+    markers: list[str] = []
+    business_signals: list[str] = []
+    for marker, values in marker_tech.items():
+        if (project_dir / marker).is_file():
+            markers.append(marker)
+            technologies.extend(values)
+
+    skill_markers = (
+        project_dir / "SKILL.md",
+        project_dir / project_dir.name / "SKILL.md",
+    )
+    if any(path.is_file() for path in skill_markers):
+        markers.append("SKILL.md")
+        business_signals.extend(["codex skill", "skill management"])
+    normalized_project_name = re.sub(r"[^a-z0-9]+", "-", project_dir.name.lower()).strip("-")
+    if re.search(r"skill.*(?:select|router)|(?:select|router).*skill", normalized_project_name):
+        business_signals.extend(["skill selection", "skill router", "skill-router-selection"])
+
+    package_path = project_dir / "package.json"
+    package_name = ""
+    dependencies: list[str] = []
+    if package_path.is_file() and package_path.stat().st_size <= 512_000:
+        try:
+            package = load_json(package_path)
+            package_name = str(package.get("name") or "")
+            all_dependencies = {
+                **dict(package.get("dependencies") or {}),
+                **dict(package.get("devDependencies") or {}),
+            }
+            known = {
+                "react", "next", "vue", "nuxt", "svelte", "vite", "astro", "angular",
+                "tailwindcss", "express", "nestjs", "electron", "playwright", "vitest", "jest",
+            }
+            dependencies = sorted(name for name in all_dependencies if name.lower() in known)[:20]
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
+
+    module_name = ""
+    for manifest, pattern in (
+        ("pyproject.toml", r"(?m)^name\s*=\s*[\"']([^\"']+)[\"']"),
+        ("Cargo.toml", r"(?m)^name\s*=\s*[\"']([^\"']+)[\"']"),
+        ("go.mod", r"(?m)^module\s+([^\s]+)"),
+    ):
+        path = project_dir / manifest
+        if not path.is_file() or path.stat().st_size > 512_000:
+            continue
+        try:
+            match = re.search(pattern, path.read_text(encoding="utf-8-sig", errors="ignore"))
+            if match:
+                module_name = match.group(1).strip()
+                break
+        except OSError:
+            pass
+
+    context.update({
+        "markers": markers,
+        "technologies": list(dict.fromkeys(technologies + dependencies)),
+        "business_signals": list(dict.fromkeys(business_signals)),
+        "manifest_name": package_name or module_name,
+    })
+    routing_parts = [
+        f"current project {project_dir.name}",
+        f"project identity {package_name or module_name}" if package_name or module_name else "",
+        f"project technologies {' '.join(context['technologies'])}" if context["technologies"] else "",
+        f"business domain {' '.join(context['business_signals'])}" if context["business_signals"] else "",
+    ]
+    context["routing_text"] = ". ".join(part for part in routing_parts if part)
+    return context
+
+
 class LazyRouteStore:
     def __init__(self, database: Path):
         self.connection = sqlite3.connect(database)
@@ -119,7 +214,7 @@ class LazyRouteStore:
         match_query = " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in useful)
         try:
             rows = self.connection.execute(
-                """SELECT c.*, bm25(cards_fts, 0.0, 8.0, 3.0, 5.0) AS recall_rank
+                """SELECT c.*, bm25(cards_fts, 0.0, 8.0, 3.0, 6.0, 5.0) AS recall_rank
                    FROM cards_fts
                    JOIN cards c ON c.skill_id = cards_fts.skill_id
                    WHERE cards_fts MATCH ?
@@ -130,13 +225,13 @@ class LazyRouteStore:
             return self._decode_cards(rows)
         except sqlite3.OperationalError:
             clauses = " OR ".join(
-                "LOWER(name) LIKE ? OR LOWER(function_summary) LIKE ? OR LOWER(capability_tags) LIKE ?"
+                "LOWER(name) LIKE ? OR LOWER(function_summary) LIKE ? OR LOWER(selection_positive_examples) LIKE ? OR LOWER(capability_tags) LIKE ?"
                 for _ in useful
             )
             parameters: list[Any] = []
             for token in useful:
                 pattern = f"%{token}%"
-                parameters.extend((pattern, pattern, pattern))
+                parameters.extend((pattern, pattern, pattern, pattern))
             parameters.append(max(1, limit))
             rows = self.connection.execute(
                 f"SELECT * FROM cards WHERE {clauses} LIMIT ?",
@@ -151,6 +246,8 @@ class LazyRouteStore:
             item = dict(row)
             item["capability_tags"] = json.loads(item.pop("capability_tags"))
             item["setup_requirements"] = json.loads(item.pop("setup_requirements"))
+            item["selection_positive_examples"] = json.loads(item.pop("selection_positive_examples", "[]"))
+            item["selection_negative_examples"] = json.loads(item.pop("selection_negative_examples", "[]"))
             result.append(item)
         return result
 
@@ -166,7 +263,7 @@ def lazy_database_is_current(database: Path, deep_dir: Path) -> bool:
         signature = "|".join(signature_parts)
         with sqlite3.connect(database) as connection:
             values = dict(connection.execute("SELECT key, value FROM metadata"))
-        return values.get("schema_version") == "1.1.0" and values.get("source_signature") == signature
+        return values.get("schema_version") == "1.2.0" and values.get("source_signature") == signature
     except (OSError, sqlite3.Error):
         return False
 
@@ -178,13 +275,18 @@ def ensure_lazy_database(deep_dir: Path, script_dir: Path) -> Path | None:
     builder = script_dir / "lazy-index.py"
     if not builder.exists():
         return None
-    result = subprocess.run(
-        [sys.executable, str(builder), "--index-dir", str(deep_dir.parent), "--compact"],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    return database if result.returncode == 0 and lazy_database_is_current(database, deep_dir) else None
+    for attempt in range(2):
+        result = subprocess.run(
+            [sys.executable, str(builder), "--index-dir", str(deep_dir.parent), "--compact"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode == 0 and lazy_database_is_current(database, deep_dir):
+            return database
+        if attempt == 0:
+            time.sleep(0.15)
+    return None
 
 
 def sha256_file(path: Path) -> str:
@@ -415,6 +517,8 @@ def skill_score(card: dict[str, Any], query_tokens: set[str], raw_query_tokens: 
     name = str(card.get("name") or "").lower()
     name_parts = set(re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]{2,}", name))
     summary = str(card.get("function_summary") or "").lower()
+    positive = " ".join(card.get("selection_positive_examples") or []).lower()
+    negative = " ".join(card.get("selection_negative_examples") or []).lower()
     tags = " ".join(card.get("capability_tags") or []).lower()
     score = 0
     for token in raw_query_tokens:
@@ -431,6 +535,10 @@ def skill_score(card: dict[str, Any], query_tokens: set[str], raw_query_tokens: 
             score += 8
         elif token in summary:
             score += 4
+        if token in positive:
+            score += 7
+        if token not in GENERIC_NAME_ROUTE_TOKENS and token in negative:
+            score -= 12
     score += {"user-local": 8, "official-system": 6, "installed-topic": 4, "linked-external": 2}.get(card.get("origin"), 0)
     score -= min(6, int(card.get("exact_duplicate_count") or 1) - 1)
     return score
@@ -734,9 +842,17 @@ def run_lazy_facet_route(
                 continue
             level_branches = store.branches(level)
             name_matches = store.name_matching_labels(level, raw_query_tokens)
+            context_name_matches = store.name_matching_labels(
+                level,
+                set(getattr(args, "context_identity_tokens", set())),
+            )
             for item in level_branches:
                 item["semantic_score"] = semantic_label_score(item, args.query, query_tokens, keywords)
-                item["query_score"] = item["semantic_score"] + (160 if item["name"] in name_matches else 0)
+                item["query_score"] = (
+                    item["semantic_score"]
+                    + (160 if item["name"] in name_matches else 0)
+                    + (360 if item["name"] in context_name_matches else 0)
+                )
                 item["path"] = f"{args.path}|{level}={item['name']}" if args.path else f"{level}={item['name']}"
             full_branches = [item for item in level_branches if item["count"] == candidate_count]
             reducing = [item for item in level_branches if item["count"] < candidate_count]
@@ -747,7 +863,11 @@ def run_lazy_facet_route(
                 continue
             if reducing:
                 reducing.sort(key=lambda item: (-item["query_score"], item["count"] if item["semantic_score"] > 0 else -item["count"], item["name"]))
-                if reducing[0]["semantic_score"] <= 0 and reducing[0]["name"] not in name_matches:
+                if (
+                    reducing[0]["semantic_score"] <= 0
+                    and reducing[0]["name"] not in name_matches
+                    and reducing[0]["name"] not in context_name_matches
+                ):
                     skipped_levels.append(f"{level} (no explicit semantic evidence)")
                     break
                 branch_level = level
@@ -1026,6 +1146,9 @@ def main() -> int:
     parser.add_argument("--fallback-recall-limit", type=int, default=30, help="Maximum compact SQLite cards recalled before reranking.")
     parser.add_argument("--disable-fallback", action="store_true", help="Disable automatic recall and rerank fallback.")
     parser.add_argument("--force-fallback", action="store_true", help="Force recall and rerank for diagnostics and tests.")
+    parser.add_argument("--context", default="", help="Additional business or agent context used only for routing and reranking.")
+    parser.add_argument("--project-dir", default="", help="Project directory used for lightweight non-recursive context detection.")
+    parser.add_argument("--no-project-context", action="store_true", help="Disable automatic project identity and technology detection.")
     parser.add_argument("--verbose", action="store_true", help="Return full summaries and all tags in the final shortlist.")
     parser.add_argument("--legacy-hierarchy", action="store_true", help="Use the canonical single-route hierarchy instead of multi-label facets.")
     parser.add_argument("--catalog-shards", action="store_true", help="Continue into alphabetical catalog shards when semantic facets are exhausted.")
@@ -1059,6 +1182,29 @@ def main() -> int:
             return 0
     keyword_path = deep_dir / "label-keywords.json"
     keywords = load_json(keyword_path) if keyword_path.exists() else {}
+    original_query = args.query
+    project_dir = Path(args.project_dir).expanduser().resolve() if args.project_dir else Path.cwd().resolve()
+    project_context = {"routing_text": ""} if args.no_project_context else collect_project_context(project_dir)
+    routing_parts = [original_query, args.context.strip(), str(project_context.get("routing_text") or "")]
+    args.query = ". ".join(part for part in routing_parts if part)
+    args.context_identity_tokens = tokens(
+        " ".join(
+            value
+            for value in (
+                str(project_context.get("project_name") or ""),
+                str(project_context.get("manifest_name") or ""),
+            )
+            if value
+        )
+    )
+    context_output = {
+        "project_name": str(project_context.get("project_name") or ""),
+        "manifest_name": str(project_context.get("manifest_name") or ""),
+        "markers": list(project_context.get("markers") or []),
+        "technologies": list(project_context.get("technologies") or []),
+        "business_signals": list(project_context.get("business_signals") or []),
+        "explicit_context": bool(args.context.strip()),
+    }
     if not args.legacy_hierarchy and not args.json_router:
         database = ensure_lazy_database(deep_dir, script_dir)
         if database is not None:
@@ -1090,6 +1236,9 @@ def main() -> int:
                 result = apply_recall_fallback(args, result, store, keywords, index_dir)
                 if args.auto_route:
                     result["route_trace"] = route_trace
+                result["query"] = original_query
+                result["context"] = context_output
+                result["selection_pipeline"] = ["agent_context", "layered_skill_profile", "taxonomy_route", "recall_rerank_fallback"]
                 print(json.dumps(result, ensure_ascii=False, indent=2))
                 return 0
             finally:
@@ -1122,6 +1271,9 @@ def main() -> int:
             result = run_facet_route(args, metadata, deep_dir, keywords, facets, cards)
         if args.auto_route:
             result["route_trace"] = route_trace
+        result["query"] = original_query
+        result["context"] = context_output
+        result["selection_pipeline"] = ["agent_context", "layered_skill_profile", "taxonomy_route", "recall_rerank_fallback"]
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 
@@ -1190,6 +1342,9 @@ def main() -> int:
             ],
             "instruction": "Present this small final shortlist and ask the user which skill to activate.",
         }
+    result["query"] = original_query
+    result["context"] = context_output
+    result["selection_pipeline"] = ["agent_context", "layered_skill_profile", "taxonomy_route", "recall_rerank_fallback"]
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 

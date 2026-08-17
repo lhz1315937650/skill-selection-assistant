@@ -13,7 +13,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = "3.0.0"
-DEEP_SCHEMA_VERSION = "2.5.0"
+DEEP_SCHEMA_VERSION = "2.6.0"
 REQUIRED_ROUTING_FILES = ("source-manifest.json", "hierarchy.json", "facets.json", "route-cards.json", "label-keywords.json")
 
 
@@ -91,6 +91,9 @@ def main() -> int:
     parser.add_argument("--fallback-recall-limit", type=int, default=30)
     parser.add_argument("--disable-fallback", action="store_true")
     parser.add_argument("--force-fallback", action="store_true", help="Force SQLite recall and reranking for diagnostics.")
+    parser.add_argument("--context", default="", help="Additional business or agent context for selection.")
+    parser.add_argument("--project-dir", default="", help="Project directory for lightweight context detection.")
+    parser.add_argument("--no-project-context", action="store_true")
     parser.add_argument("--compat", action="store_true", help="Include the deprecated nested deep_route object.")
     parser.add_argument("--compact", action="store_true", help="Emit compact JSON for lower token and logging overhead.")
     parser.add_argument(
@@ -178,6 +181,12 @@ def main() -> int:
         route_command.append("--disable-fallback")
     if args.force_fallback:
         route_command.append("--force-fallback")
+    if args.context:
+        route_command.extend(["--context", args.context])
+    if args.project_dir:
+        route_command.extend(["--project-dir", args.project_dir])
+    if args.no_project_context:
+        route_command.append("--no-project-context")
 
     deep_result = run_json(route_command, "deep route selection")
     if deep_result.get("mode") == "index_stale":
@@ -214,6 +223,8 @@ def main() -> int:
             "generated_at": metadata.get("generated_at", ""),
         },
         "route": deep_result.get("current", {}),
+        "context": deep_result.get("context", {}),
+        "selection_pipeline": deep_result.get("selection_pipeline", []),
         "selection_model": deep_result.get("selection_model", "multi_label_facet_intersection"),
         "storage_model": deep_result.get("storage_model", "json_full"),
         "route_trace": deep_result.get("route_trace", []),

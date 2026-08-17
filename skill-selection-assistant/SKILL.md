@@ -119,6 +119,8 @@ This mode is returned only during explicit strict freshness checks. Refresh the 
 ## Recommendation Rules
 
 - Use the dynamic returned set; never force a fixed `1-3` count.
+- Preserve the context-first pipeline: project/Agent context, layered positive and negative examples, taxonomy routing, then recall and rerank fallback.
+- Treat returned project context as routing evidence only. Do not load the repository recursively or copy project files into the user-facing answer.
 - Prefer a final shortlist of 3-4 skills when the matched pool is large enough.
 - Intermediate category branches, paths, scores, and route traces are for the
   AI only and must not be shown to the user.
@@ -127,6 +129,7 @@ This mode is returned only during explicit strict freshness checks. Refresh the 
 - Merge identical content and keep meaningful same-name variants distinguishable.
 - Do not load the full hierarchy, detailed catalog, NDJSON index, or all route cards into model context during ordinary selection.
 - When the returned `fallback.triggered` value is true, use the already reranked final candidates normally. The fallback searches only compact SQLite cards and must not cause source skill bodies to be loaded.
+- Positive examples are relevance evidence. Negative examples are exclusion evidence and must never be presented as capabilities.
 - Do not invent candidates that were not returned by the installing user's current index.
 - Do not expose classification tags, source paths, hashes, provenance,
   duplicate counts, or reference-file contents in the user-facing shortlist.

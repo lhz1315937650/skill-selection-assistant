@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.10.0 - 2026-08-17
+
+- added a context-first selection pipeline that detects project identity, top-level manifests, technology signals, and skill-project business signals without recursive scanning
+- added layered skill profiles with purpose, positive selection examples, and explicit negative examples
+- excluded negative-example sections from positive capability classification to prevent misleading tags
+- added positive-example score boosts and negative-example penalties during final reranking
+- added high-weight project-identity routing so vague requests can still select skills aligned with the current workspace
+- exposed project context and the four-stage selection pipeline in Python and PowerShell recommendation output
+
 ## v1.9.0 - 2026-08-17
 
 - added an automatic recall-and-rerank fallback for weak, empty, or undersized taxonomy results

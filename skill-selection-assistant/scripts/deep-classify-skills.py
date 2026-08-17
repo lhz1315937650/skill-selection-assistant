@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-SCHEMA_VERSION = "2.5.0"
+SCHEMA_VERSION = "2.6.0"
 DEFAULT_LEAF_TARGET = 24
 MAX_TAGS = {
     "domain_detail": 6,
@@ -190,6 +190,88 @@ def first_body_summary(body: str) -> str:
     return ""
 
 
+def clean_selection_example(value: str) -> str:
+    value = re.sub(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)", "", value)
+    value = re.sub(r"[`*_>#]", "", value)
+    return normalize_text(value)[:260]
+
+
+def extract_selection_examples(description: str, body: str) -> tuple[list[str], list[str]]:
+    positive: list[str] = []
+    negative: list[str] = []
+    positive_heading = re.compile(r"when to use|use cases?|triggers?|适用|使用场景|触发", re.I)
+    negative_heading = re.compile(r"when not to use|do not use|not suitable|avoid using|不适用|不要使用|禁用场景", re.I)
+    current = ""
+    for raw_line in body.splitlines():
+        heading = re.match(r"^#{1,5}\s+(.+?)\s*$", raw_line)
+        if heading:
+            title = normalize_text(heading.group(1))
+            current = "negative" if negative_heading.search(title) else "positive" if positive_heading.search(title) else ""
+            continue
+        cleaned = clean_selection_example(raw_line)
+        if not cleaned or len(cleaned) < 8:
+            continue
+        if current == "positive" and len(positive) < 8:
+            positive.append(cleaned)
+        elif current == "negative" and len(negative) < 8:
+            negative.append(cleaned)
+
+    combined = f"{description}\n{body}"
+    for match in re.finditer(
+        r"(?im)^(.*?(?:use this skill when|use when|trigger(?:ed)? (?:with|by)|适用于|使用场景|触发词).*?)$",
+        combined,
+    ):
+        cleaned = clean_selection_example(match.group(1))
+        if cleaned:
+            positive.append(cleaned)
+    for match in re.finditer(
+        r"(?im)^(.*?(?:do not use this skill|not suitable for|avoid using this skill|本 skill 不适用|不适用于|不要使用此 skill).*?)$",
+        combined,
+    ):
+        cleaned = clean_selection_example(match.group(1))
+        if cleaned:
+            negative.append(cleaned)
+
+    quoted = re.findall(r"[\"“]([^\"”]{4,120})[\"”]", description)
+    positive.extend(clean_selection_example(value) for value in quoted)
+    return list(dict.fromkeys(value for value in positive if value))[:8], list(dict.fromkeys(value for value in negative if value))[:8]
+
+
+def body_without_negative_examples(body: str) -> str:
+    negative_heading = re.compile(r"when not to use|do not use|not suitable|avoid using|不适用|不要使用|禁用场景", re.I)
+    explicit_negative = re.compile(
+        r"do not use this skill|not suitable for|avoid using this skill|本 skill 不适用|不适用于|不要使用此 skill",
+        re.I,
+    )
+    kept: list[str] = []
+    skip_level = 0
+    for line in body.splitlines():
+        heading = re.match(r"^#{1,5}\s+(.+?)\s*$", line)
+        if heading:
+            level = len(line) - len(line.lstrip("#"))
+            if skip_level and level > skip_level:
+                continue
+            if negative_heading.search(normalize_text(heading.group(1))):
+                skip_level = level
+                continue
+            skip_level = 0
+            if not skip_level:
+                kept.append(line)
+            continue
+        if skip_level or explicit_negative.search(line):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def description_without_negative_examples(description: str) -> str:
+    return normalize_text(re.sub(
+        r"(?i)(?:do not use this skill|not suitable for|avoid using this skill|本 skill 不适用|不适用于|不要使用此 skill).*$",
+        "",
+        description,
+    ))
+
+
 def compile_rules(raw: dict[str, Any]) -> dict[str, re.Pattern[str]]:
     result: dict[str, re.Pattern[str]] = {}
     for key, pattern in raw.items():
@@ -301,33 +383,36 @@ def classify_document(
     fallback_name = path.parent.name
     name = normalize_text(meta.get("name") or manifest_entry.get("canonical_name") or fallback_name)
     description = normalize_text(meta.get("description") or meta.get("short-description") or first_body_summary(body))
+    positive_examples, negative_examples = extract_selection_examples(description, body)
+    classification_description = description_without_negative_examples(description)
+    classification_body = body_without_negative_examples(body)
     headings_list = [normalize_text(m.group(1)) for m in re.finditer(r"(?m)^#{1,4}\s+(.+?)\s*$", body)]
     headings_list = [value for value in headings_list if value][:20]
     headings = " ".join(headings_list)
 
     detail, detail_ev = score_rule_set(
-        name, description, headings, body,
+        name, classification_description, headings, classification_body,
         compiled_rules["domain_detail"], 6, MAX_TAGS["domain_detail"]
     )
     specialty, specialty_ev = score_rule_set(
-        name, description, headings, body,
+        name, classification_description, headings, classification_body,
         compiled_rules["specialty"], 6, MAX_TAGS["specialty"]
     )
     tasks, task_ev = score_rule_set(
-        name, description, headings, body,
+        name, classification_description, headings, classification_body,
         compiled_rules["task_type"], 5, MAX_TAGS["task_type"]
     )
     outputs, output_ev = score_rule_set(
-        name, description, headings, body,
+        name, classification_description, headings, classification_body,
         compiled_rules["output_type"], 5, MAX_TAGS["output_type"]
     )
     tech, tech_ev = score_rule_set(
-        name, description, headings, body,
+        name, classification_description, headings, classification_body,
         compiled_rules["tech_stack"], 6, MAX_TAGS["tech_stack"]
     )
 
     if not detail:
-        detail = ["coding-general" if re.search(r"code|script|software|program|代码|开发", f"{name} {description}", re.I) else "general"]
+        detail = ["coding-general" if re.search(r"code|script|software|program|代码|开发", f"{name} {classification_description}", re.I) else "general"]
     if not specialty:
         specialty = ["general"]
     if not tasks:
@@ -340,7 +425,7 @@ def classify_document(
     primary_map = rules.get("primary_map", {})
     primary_domains = list(dict.fromkeys(str(primary_map.get(value) or "general") for value in detail))
     primary_domain = primary_domains[0]
-    setup_requirements = infer_setup_requirements(description, body)
+    setup_requirements = infer_setup_requirements(classification_description, classification_body)
     setup_level = setup_requirements[0]
     route = {
         "primary_domain": primary_domain,
@@ -366,6 +451,8 @@ def classify_document(
         "canonical_name": canonical_name(name),
         "function_summary": description[:600],
         "function_detail": normalize_text(f"{description}\n{body}")[:1500],
+        "selection_positive_examples": positive_examples,
+        "selection_negative_examples": negative_examples,
         "headings": headings_list,
         "primary_domain": primary_domain,
         "primary_domains": primary_domains,
@@ -551,6 +638,8 @@ def compact_route_card(item: dict[str, Any]) -> dict[str, Any]:
         "name": item["name"],
         "canonical_name": item["canonical_name"],
         "function_summary": item["function_summary"],
+        "selection_positive_examples": item.get("selection_positive_examples") or [],
+        "selection_negative_examples": item.get("selection_negative_examples") or [],
         "primary_domains": item.get("primary_domains") or [item["primary_domain"]],
         "domain_detail": item["domain_detail"],
         "specialty": item["specialty"],

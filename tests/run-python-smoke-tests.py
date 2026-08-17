@@ -80,7 +80,7 @@ def test_routing_and_incremental(temp: Path) -> None:
     index = temp / "index"
     shutil.copytree(FIXTURES, root)
     first = build(root, index)
-    assert_true(first["schema_version"] == "2.5.0", "deep schema should be 2.5.0")
+    assert_true(first["schema_version"] == "2.6.0", "deep schema should be 2.6.0")
     assert_true(first["reclassified_files"] == 13 and first["reused_files"] == 0, "first build should classify all files")
 
     explicit = next(json.loads(line) for line in (index / "deep" / "skills-deep-index.ndjson").read_text(encoding="utf-8").splitlines() if '"explicit-api-client"' in line)
@@ -99,6 +99,7 @@ def test_routing_and_incremental(temp: Path) -> None:
         "3",
         "--limit",
         "12",
+        "--no-project-context",
     ]
     result = run_json(command)
     assert_true(result["schema_version"] == "3.0.0", "unified recommender should expose an explicit schema")
@@ -110,6 +111,39 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true((index / "deep" / "lazy-route.sqlite3").exists(), "default routing should create the SQLite lazy index")
     assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
+    route_cards = json.loads((index / "deep" / "route-cards.json").read_text(encoding="utf-8"))
+    frontend_card = next(value for value in route_cards.values() if value["name"] == "frontend-design")
+    assert_true(frontend_card["selection_positive_examples"], "classifier should extract positive selection examples")
+    assert_true(frontend_card["selection_negative_examples"], "classifier should extract negative selection examples")
+    assert_true("backend-database" not in frontend_card["capability_tags"], "negative examples must not pollute positive capability tags")
+    router_module = load_module("deep_router_layered_profile_test", ROUTER)
+    positive_tokens = router_module.tokens("create a polished frontend page")
+    negative_tokens = router_module.tokens("backend database migrations")
+    assert_true(
+        router_module.skill_score(frontend_card, positive_tokens, positive_tokens)
+        > router_module.skill_score(frontend_card, negative_tokens, negative_tokens),
+        "positive examples should score above explicit negative examples",
+    )
+
+    context_project = temp / "frontend-design"
+    context_project.mkdir()
+    contextual = run_json([
+        sys.executable,
+        str(RECOMMENDER),
+        "--query",
+        "improve the current project",
+        "--project-dir",
+        str(context_project),
+        "--index-dir",
+        str(index),
+        "--skills-root",
+        str(root),
+        "--limit",
+        "4",
+    ])
+    assert_true(contextual["context"]["project_name"] == "frontend-design", "router should expose lightweight project identity context")
+    assert_true(contextual["selection_pipeline"][0] == "agent_context", "output should expose the context-first selection pipeline")
+    assert_true("frontend-design" in [item["name"] for item in contextual["candidates"]], "project identity should improve skill selection for vague requests")
     fallback = run_json(command + ["--force-fallback"])
     assert_true(fallback["fallback"]["triggered"] and fallback["fallback"]["applied"], "forced fallback should run SQLite recall and reranking")
     assert_true(fallback["selection_model"] == "taxonomy_then_recall_rerank", "fallback output should identify the two-stage selection model")
@@ -341,7 +375,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.9.0", "installer should report the installed version")
+    assert_true(installed["version"] == "1.10.0", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,

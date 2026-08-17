@@ -11,6 +11,8 @@
     "mode": { "enum": ["choose_category", "choose_skill", "no_skills_installed", "index_stale", "error"] },
     "index": { "type": "object" },
     "route": { "type": "object" },
+    "context": { "type": "object" },
+    "selection_pipeline": { "type": "array", "items": { "type": "string" } },
     "selection_model": { "enum": ["multi_label_facet_intersection", "taxonomy_then_recall_rerank"] },
     "storage_model": { "enum": ["sqlite_lazy", "json_full"] },
     "fallback": { "type": "object" },

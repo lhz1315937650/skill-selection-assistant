@@ -10,6 +10,8 @@ A local, automatic skill router for large Codex skill libraries.
 
 Skill Selection Assistant classifies installed skills when the index is built, stores the classification locally, and routes each request through only the relevant SQLite categories. Normal requests do not recursively reopen every `SKILL.md`, do not expose intermediate category questions, and return only the final weighted shortlist.
 
+Selection follows four stages: lightweight Agent/project context, layered skill profiles with positive and negative examples, taxonomy routing, and bounded recall plus reranking fallback.
+
 ## Why It Exists
 
 A flat library works for dozens of skills. It becomes slow and token-heavy when the library grows into the thousands: every request risks loading a huge catalog, inspecting unrelated skills, or asking the user to choose categories one level at a time.
@@ -26,6 +28,8 @@ This project treats skill selection like lazy loading in a frontend application:
 
 - SQLite lazy routing for large local libraries.
 - Automatic SQLite FTS5/BM25 recall and rerank fallback for weak taxonomy matches.
+- Lightweight non-recursive project and business-context detection.
+- Layered skill profiles with explicit positive and negative selection examples.
 - Automatic domain, specialty, task, technology, output, and setup routing.
 - No recursive source-library freshness scan during normal recommendations.
 - No user-facing category-by-category questionnaire.
@@ -45,7 +49,9 @@ Installation / update / explicit maintenance
     -> publish lazy-route.sqlite3
 
 Normal request
+    -> detect lightweight project and Agent context
     -> open existing SQLite index
+    -> apply purpose, positive-example, and negative-example boundaries
     -> choose categories internally
     -> narrow the active candidate set
     -> read cards from the final route
@@ -54,6 +60,18 @@ Normal request
 ```
 
 The default path never traverses all source skill files. A full source comparison runs only when explicitly requested or when an index must be created or repaired.
+
+### Context And Layered Descriptions
+
+The router inspects only bounded workspace signals: the current directory name, immediate `SKILL.md` markers, and top-level manifests such as `package.json`, `pyproject.toml`, `go.mod`, and `Cargo.toml`. It extracts project identity, recognized frameworks, and business signals, then gives exact project-to-skill identity matches higher weight.
+
+During index construction, each skill receives a layered selection profile:
+
+- `purpose`: the normal function summary.
+- `selection_positive_examples`: explicit use cases, trigger phrases, and "when to use" examples.
+- `selection_negative_examples`: explicit "when not to use" or "not suitable" examples.
+
+Negative sections are excluded from positive capability classification. They reduce final relevance instead of accidentally adding unrelated tags.
 
 ### Recall And Rerank Fallback
 
@@ -121,6 +139,16 @@ Normal output reaches the final shortlist directly:
   "mode": "choose_skill",
   "storage_model": "sqlite_lazy",
   "selection_model": "multi_label_facet_intersection",
+  "selection_pipeline": [
+    "agent_context",
+    "layered_skill_profile",
+    "taxonomy_route",
+    "recall_rerank_fallback"
+  ],
+  "context": {
+    "project_name": "example-project",
+    "technologies": ["react", "typescript"]
+  },
   "index": {
     "freshness_policy": "explicit"
   },
@@ -191,7 +219,7 @@ Runtime data lives under the installed skill's `.skill-index/` directory and is 
 python tests/run-python-smoke-tests.py
 powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.9.0
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.10.0
 ```
 
 Repository layout:

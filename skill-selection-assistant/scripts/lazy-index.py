@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 SOURCE_FILES = ("facets.json", "route-cards.json")
 
 
@@ -66,6 +66,8 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
                 name TEXT NOT NULL,
                 canonical_name TEXT NOT NULL,
                 function_summary TEXT NOT NULL,
+                selection_positive_examples TEXT NOT NULL,
+                selection_negative_examples TEXT NOT NULL,
                 capability_tags TEXT NOT NULL,
                 setup_level TEXT NOT NULL,
                 setup_requirements TEXT NOT NULL,
@@ -87,6 +89,7 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
                 skill_id UNINDEXED,
                 name,
                 function_summary,
+                positive_examples,
                 capability_tags,
                 tokenize = 'unicode61 remove_diacritics 2'
             );
@@ -101,13 +104,15 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
             enumerate(facets.get("levels", [])),
         )
         connection.executemany(
-            """INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO cards VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             [
                 (
                     skill_id,
                     str(card.get("name") or ""),
                     str(card.get("canonical_name") or card.get("name") or ""),
                     str(card.get("function_summary") or ""),
+                    json.dumps(card.get("selection_positive_examples") or [], ensure_ascii=False, separators=(",", ":")),
+                    json.dumps(card.get("selection_negative_examples") or [], ensure_ascii=False, separators=(",", ":")),
                     json.dumps(card.get("capability_tags") or [], ensure_ascii=False, separators=(",", ":")),
                     str(card.get("setup_level") or "unknown"),
                     json.dumps(card.get("setup_requirements") or [card.get("setup_level") or "unknown"], ensure_ascii=False, separators=(",", ":")),
@@ -121,12 +126,13 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
             ],
         )
         connection.executemany(
-            "INSERT INTO cards_fts(skill_id, name, function_summary, capability_tags) VALUES (?, ?, ?, ?)",
+            "INSERT INTO cards_fts(skill_id, name, function_summary, positive_examples, capability_tags) VALUES (?, ?, ?, ?, ?)",
             [
                 (
                     skill_id,
                     str(card.get("name") or ""),
                     str(card.get("function_summary") or ""),
+                    " ".join(str(value) for value in (card.get("selection_positive_examples") or [])),
                     " ".join(str(tag) for tag in (card.get("capability_tags") or [])),
                 )
                 for skill_id, card in cards.items()

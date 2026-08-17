@@ -73,7 +73,7 @@ try {
   Assert-True ([int]$deepMetadata.classified_files -eq 13) "deep classifier should classify every fixture SKILL.md"
   Assert-True ([int]$deepMetadata.failures -eq 0) "deep classifier should report zero fixture failures"
   Assert-True ($deepMetadata.full_body_read -eq $true) "deep classifier should declare full-body reading"
-  Assert-True ($deepMetadata.schema_version -eq "2.5.0") "deep classifier should expose portable source-manifest schema"
+  Assert-True ($deepMetadata.schema_version -eq "2.6.0") "deep classifier should expose portable source-manifest schema"
   Assert-True ($deepMetadata.multi_label_facets -eq $true) "deep classifier should enable multi-label facets"
   Assert-True ($deepMetadata.detailed_function_profiles -eq $true) "deep classifier should generate detailed function profiles"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\facets.json")) "deep classifier should generate facet index"
@@ -112,7 +112,7 @@ try {
   $deepPath = ""
   $deepResult = $null
   for ($deepStep = 0; $deepStep -lt 12; $deepStep++) {
-    $deepArgs = @($deepRouteScript, "--query", "build a beautiful frontend UI", "--index-dir", $indexDir, "--limit", "12")
+    $deepArgs = @($deepRouteScript, "--query", "build a beautiful frontend UI", "--index-dir", $indexDir, "--limit", "12", "--no-project-context")
     if ($deepPath) { $deepArgs += @("--path", $deepPath) }
     $deepResult = (& python @deepArgs | Out-String | ConvertFrom-Json)
     if ($deepResult.mode -eq "choose_skill") { break }
@@ -170,6 +170,8 @@ try {
   Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
   Assert-True ($deepRecommendation.storage_model -eq "sqlite_lazy") "default PowerShell recommendation should use SQLite lazy loading"
   Assert-True ($deepRecommendation.index.freshness_policy -eq "explicit") "normal PowerShell routing should not scan the whole skill library"
+  Assert-True (@($deepRecommendation.selection_pipeline).Count -eq 4) "PowerShell output should expose the four-stage selection pipeline"
+  Assert-True ($deepRecommendation.context.PSObject.Properties.Name -contains "project_name") "PowerShell output should expose lightweight project context"
   Assert-True ($deepRecommendation.fallback.triggered -eq $false) "a strong PowerShell taxonomy match should not invoke fallback recall"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\lazy-route.sqlite3")) "default recommendation should create the SQLite lazy index"
   Assert-True (@($deepRecommendation.route_trace).Count -gt 0) "PowerShell recommendation should retain its internal route trace"
@@ -266,7 +268,7 @@ try {
   Assert-True (-not $memoryText.Contains("build a beautiful frontend UI")) "selection memory should not store raw queries by default"
   $pythonMemoryResult = (& python $pythonMemoryScript --query "private frontend request" --outcome selected --selected-skill frontend-design --route-type domain_detail --category frontend-web --index-dir $indexDir | Out-String | ConvertFrom-Json)
   Assert-True ($pythonMemoryResult.query_stored -eq $false) "Python memory recorder should be privacy-first"
-  $deepMemoryResult = (& python $deepRouteScript --query "build a beautiful frontend UI" --index-dir $indexDir --path $deepPath --limit 12 | Out-String | ConvertFrom-Json)
+  $deepMemoryResult = (& python $deepRouteScript --query "build a beautiful frontend UI" --index-dir $indexDir --path $deepPath --limit 12 --no-project-context | Out-String | ConvertFrom-Json)
   $deepRememberedCandidate = @($deepMemoryResult.candidates | Where-Object { $_.name -eq "frontend-design" })[0]
   Assert-True ([int]$deepRememberedCandidate.memory_score -gt 0) "deep routing should apply bounded memory inside a compatible selected route"
 
@@ -353,7 +355,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.9.0" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.10.0" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

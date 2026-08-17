@@ -10,6 +10,8 @@
 
 Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类结果保存在本地。普通请求只查询当前相关的 SQLite 分类路径，不会递归重新读取全部 `SKILL.md`，不会要求用户逐层选择分类，只返回最终几个加权候选 skill。
 
+完整选择流程分为四层：轻量 Agent/项目上下文、带正反例的分层 skill 描述、分类路由，以及有限召回与重排兜底。
+
 ## 为什么需要它
 
 几十个 skill 可以直接遍历；当本地库增长到几千甚至上万个 skill 时，每个请求都检查完整目录会带来明显的等待时间和 token 浪费，同时大量完全无关的 skill 也可能进入上下文。
@@ -26,6 +28,8 @@ Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类�
 
 - 面向大型本地 skill 库的 SQLite 懒加载路由。
 - 分类命中较弱时自动使用 SQLite FTS5/BM25 召回并重排。
+- 非递归检测当前项目身份、技术栈和业务信号。
+- 使用用途、正例和反例构建分层 skill 选择画像。
 - 自动完成领域、专科、任务、技术栈、输出类型和环境要求分类。
 - 普通推荐不执行递归源文件新鲜度扫描。
 - 不向用户展示逐层分类选择过程。
@@ -45,7 +49,9 @@ Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类�
     -> 发布 lazy-route.sqlite3
 
 普通请求
+    -> 检测轻量项目与 Agent 上下文
     -> 打开现有 SQLite 索引
+    -> 应用用途、正例和反例边界
     -> 内部自动选择分类
     -> 持续缩小候选集合
     -> 只读取最终路径的候选卡片
@@ -54,6 +60,18 @@ Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类�
 ```
 
 默认请求路径不会遍历全部源 skill 文件。只有创建、修复索引或用户明确要求严格检查时，才会核对完整来源目录。
+
+### 上下文与分层描述
+
+路由器只读取有限的工作区信号：当前目录名、第一层 `SKILL.md` 标记，以及 `package.json`、`pyproject.toml`、`go.mod`、`Cargo.toml` 等顶层清单。它会提取项目身份、常用框架和业务信号，并提高项目身份与 skill 名称精确匹配的权重。
+
+构建索引时，每个 skill 会生成三层选择画像：
+
+- `purpose`：skill 的正常功能说明。
+- `selection_positive_examples`：明确的适用场景、触发词和正向示例。
+- `selection_negative_examples`：明确的不适用场景和反向示例。
+
+反例章节不会参与正向能力分类，而是在最终重排中降低相关性，避免“不要用于数据库迁移”反而生成数据库能力标签。
 
 ### 召回与重排兜底
 
@@ -121,6 +139,16 @@ python scripts/recommend-skills.py \
   "mode": "choose_skill",
   "storage_model": "sqlite_lazy",
   "selection_model": "multi_label_facet_intersection",
+  "selection_pipeline": [
+    "agent_context",
+    "layered_skill_profile",
+    "taxonomy_route",
+    "recall_rerank_fallback"
+  ],
+  "context": {
+    "project_name": "example-project",
+    "technologies": ["react", "typescript"]
+  },
   "index": {
     "freshness_policy": "explicit"
   },
@@ -191,7 +219,7 @@ PowerShell 使用 `-StrictFreshness` 显式执行全库核对。
 python tests/run-python-smoke-tests.py
 powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.9.0
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.10.0
 ```
 
 仓库结构：
