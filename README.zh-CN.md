@@ -25,6 +25,7 @@ Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类�
 ## 核心能力
 
 - 面向大型本地 skill 库的 SQLite 懒加载路由。
+- 分类命中较弱时自动使用 SQLite FTS5/BM25 召回并重排。
 - 自动完成领域、专科、任务、技术栈、输出类型和环境要求分类。
 - 普通推荐不执行递归源文件新鲜度扫描。
 - 不向用户展示逐层分类选择过程。
@@ -48,10 +49,17 @@ Skill Selection Assistant 在构建索引时完成 skill 分类，并把分类�
     -> 内部自动选择分类
     -> 持续缩小候选集合
     -> 只读取最终路径的候选卡片
+    -> 如果置信度不足：全局召回 Top N 卡片并重排
     -> 返回最终加权 skill
 ```
 
 默认请求路径不会遍历全部源 skill 文件。只有创建、修复索引或用户明确要求严格检查时，才会核对完整来源目录。
+
+### 召回与重排兜底
+
+分类路由仍然是最快的主路径。当分类没有候选、最高得分过低，或候选太少且没有强命中时，系统自动启用兜底。它只在 SQLite 紧凑字段中执行 FTS5/BM25 检索，默认最多召回 30 张卡片，再结合名称、能力标签、描述、来源、重复信息和本地选择记忆进行重排。
+
+兜底完全在本地确定性运行，不会重新打开源 `SKILL.md`，不会调用 Embedding API，不会下载模型，也不会递归扫描整个文件系统。
 
 ## 性能验证
 
@@ -112,10 +120,14 @@ python scripts/recommend-skills.py \
 {
   "mode": "choose_skill",
   "storage_model": "sqlite_lazy",
+  "selection_model": "multi_label_facet_intersection",
   "index": {
     "freshness_policy": "explicit"
   },
   "branches": [],
+  "fallback": {
+    "triggered": false
+  },
   "candidates": [
     {
       "name": "example-skill",
@@ -179,7 +191,7 @@ PowerShell 使用 `-StrictFreshness` 显式执行全库核对。
 python tests/run-python-smoke-tests.py
 powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.1
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.9.0
 ```
 
 仓库结构：

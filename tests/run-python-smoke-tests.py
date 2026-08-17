@@ -106,9 +106,18 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true(result["mode"] == "choose_skill", "default recommendation should automatically reach a skill shortlist")
     assert_true(result["storage_model"] == "sqlite_lazy", "default routing should use the SQLite lazy backend")
     assert_true(result["index"]["freshness_policy"] == "explicit", "normal routing should never scan all source skills for freshness")
+    assert_true(result["fallback"]["triggered"] is False, "a strong taxonomy match should not invoke fallback recall")
     assert_true((index / "deep" / "lazy-route.sqlite3").exists(), "default routing should create the SQLite lazy index")
     assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
+    fallback = run_json(command + ["--force-fallback"])
+    assert_true(fallback["fallback"]["triggered"] and fallback["fallback"]["applied"], "forced fallback should run SQLite recall and reranking")
+    assert_true(fallback["selection_model"] == "taxonomy_then_recall_rerank", "fallback output should identify the two-stage selection model")
+    assert_true(fallback["fallback"]["recalled_candidates"] <= 30, "fallback should rerank only the bounded recall set")
+    assert_true(fallback["fallback"]["retained_routed_candidates"] > 0, "fallback should not discard stronger routed candidates")
+    assert_true("frontend-design" in [item["name"] for item in fallback["candidates"]], "fallback recall should preserve the relevant frontend skill")
+    automatic_fallback = run_json(command + ["--fallback-min-score", "10000"])
+    assert_true(automatic_fallback["fallback"]["reason"] == "low_top_score", "configured confidence thresholds should trigger fallback automatically")
     branch_debug = run_json(command + ["--show-branches"])
     assert_true(branch_debug["mode"] == "choose_category", "explicit taxonomy debugging should still expose category branches")
     freshness_cache = index / "deep" / ".freshness-cache.json"
@@ -332,7 +341,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
     assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.8.1", "installer should report the installed version")
+    assert_true(installed["version"] == "1.9.0", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,

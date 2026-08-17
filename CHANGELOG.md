@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.0 - 2026-08-17
+
+- added an automatic recall-and-rerank fallback for weak, empty, or undersized taxonomy results
+- added a bounded SQLite FTS5/BM25 index over compact skill names, summaries, and capability tags
+- reranked only the recalled Top N cards with existing query, provenance, duplicate, and selection-memory signals
+- exposed fallback trigger, reason, recall size, and selection model in Python and PowerShell output
+- kept fallback fully local and prevented it from reading source `SKILL.md` files or requiring network/model dependencies
+
 ## v1.8.1 - 2026-08-15
 
 - removed recursive source-library scans from the normal Python and PowerShell recommendation paths

@@ -107,6 +107,45 @@ class LazyRouteStore:
         rows = self.connection.execute(
             "SELECT c.* FROM cards c JOIN active_candidates active ON active.skill_id = c.skill_id"
         )
+        return self._decode_cards(rows)
+
+    def recall_cards(self, query_tokens: set[str], limit: int) -> list[dict[str, Any]]:
+        useful = sorted(
+            {token.lower() for token in query_tokens if len(token.strip()) >= 2},
+            key=lambda token: (token in GENERIC_NAME_ROUTE_TOKENS, -len(token), token),
+        )[:24]
+        if not useful:
+            return []
+        match_query = " OR ".join(f'"{token.replace(chr(34), chr(34) * 2)}"' for token in useful)
+        try:
+            rows = self.connection.execute(
+                """SELECT c.*, bm25(cards_fts, 0.0, 8.0, 3.0, 5.0) AS recall_rank
+                   FROM cards_fts
+                   JOIN cards c ON c.skill_id = cards_fts.skill_id
+                   WHERE cards_fts MATCH ?
+                   ORDER BY recall_rank
+                   LIMIT ?""",
+                (match_query, max(1, limit)),
+            )
+            return self._decode_cards(rows)
+        except sqlite3.OperationalError:
+            clauses = " OR ".join(
+                "LOWER(name) LIKE ? OR LOWER(function_summary) LIKE ? OR LOWER(capability_tags) LIKE ?"
+                for _ in useful
+            )
+            parameters: list[Any] = []
+            for token in useful:
+                pattern = f"%{token}%"
+                parameters.extend((pattern, pattern, pattern))
+            parameters.append(max(1, limit))
+            rows = self.connection.execute(
+                f"SELECT * FROM cards WHERE {clauses} LIMIT ?",
+                parameters,
+            )
+            return self._decode_cards(rows)
+
+    @staticmethod
+    def _decode_cards(rows: Any) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
@@ -127,7 +166,7 @@ def lazy_database_is_current(database: Path, deep_dir: Path) -> bool:
         signature = "|".join(signature_parts)
         with sqlite3.connect(database) as connection:
             values = dict(connection.execute("SELECT key, value FROM metadata"))
-        return values.get("schema_version") == "1.0.0" and values.get("source_signature") == signature
+        return values.get("schema_version") == "1.1.0" and values.get("source_signature") == signature
     except (OSError, sqlite3.Error):
         return False
 
@@ -570,6 +609,95 @@ def rank_final_cards(
     return result_candidates, len(visible), len(cards)
 
 
+def fallback_trigger_reason(args: argparse.Namespace, result: dict[str, Any]) -> str:
+    if args.disable_fallback:
+        return ""
+    if args.force_fallback:
+        return "forced"
+    if result.get("mode") not in {"choose_skill", "no_skills_installed"}:
+        return ""
+    candidates = list(result.get("candidates") or [])
+    if not candidates:
+        return "no_candidates"
+    top_score = max(int(item.get("score") or 0) for item in candidates)
+    if top_score < args.fallback_min_score:
+        return "low_top_score"
+    if len(candidates) < args.fallback_min_candidates and top_score < args.fallback_strong_score:
+        return "insufficient_candidates"
+    return ""
+
+
+def apply_recall_fallback(
+    args: argparse.Namespace,
+    result: dict[str, Any],
+    store: LazyRouteStore,
+    keywords: dict[str, Any],
+    index_dir: Path,
+) -> dict[str, Any]:
+    reason = fallback_trigger_reason(args, result)
+    if not reason:
+        result["fallback"] = {"triggered": False}
+        return result
+
+    raw_query_tokens = tokens(args.query)
+    query_tokens = expand_query_tokens(args.query, keywords)
+    recalled = store.recall_cards(query_tokens.union(raw_query_tokens), args.fallback_recall_limit)
+    original_candidates = list(result.get("candidates") or [])
+    fallback_info = {
+        "triggered": True,
+        "applied": bool(recalled),
+        "reason": reason,
+        "recall_model": "sqlite_fts5_bm25",
+        "rerank_model": "query_name_tag_summary_memory",
+        "recall_limit": args.fallback_recall_limit,
+        "recalled_candidates": len(recalled),
+        "original_returned_candidates": len(original_candidates),
+        "original_top_score": max((int(item.get("score") or 0) for item in original_candidates), default=0),
+    }
+    if not recalled:
+        result["fallback"] = fallback_info
+        return result
+
+    candidates, candidate_pool, content_variant_pool = rank_final_cards(
+        args,
+        recalled,
+        query_tokens,
+        raw_query_tokens,
+        {},
+        index_dir,
+    )
+    combined_by_name: dict[str, dict[str, Any]] = {}
+    for candidate in [*original_candidates, *candidates]:
+        name = str(candidate.get("name") or "")
+        existing = combined_by_name.get(name)
+        if existing is None or int(candidate.get("score") or 0) > int(existing.get("score") or 0):
+            combined_by_name[name] = candidate
+    combined_pool = len(combined_by_name)
+    candidates = sorted(
+        combined_by_name.values(),
+        key=lambda item: (-int(item.get("score") or 0), str(item.get("name") or "")),
+    )[: args.limit]
+    original_names = {str(value.get("name") or "") for value in original_candidates}
+    fallback_info["retained_routed_candidates"] = sum(
+        1 for item in candidates if str(item.get("name") or "") in original_names
+    )
+    fallback_info["reranked_candidates"] = combined_pool
+    result.update({
+        "mode": "choose_skill",
+        "selection_model": "taxonomy_then_recall_rerank",
+        "candidate_pool": combined_pool,
+        "content_variant_pool": content_variant_pool,
+        "returned_candidates": len(candidates),
+        "candidates": candidates,
+        "fallback": fallback_info,
+        "instruction": (
+            "The taxonomy route had weak coverage, so a compact SQLite recall and rerank fallback was applied. "
+            "Present only each final candidate's name, function_summary, and score."
+        ),
+    })
+    return result
+
+
 def run_lazy_facet_route(
     args: argparse.Namespace,
     metadata: dict[str, Any],
@@ -892,6 +1020,12 @@ def main() -> int:
     parser.add_argument("--leaf-target", type=int, default=0)
     parser.add_argument("--branch-score-window", type=int, default=60)
     parser.add_argument("--candidate-score-window", type=int, default=12)
+    parser.add_argument("--fallback-min-score", type=int, default=24, help="Recall globally when the best routed candidate scores below this value.")
+    parser.add_argument("--fallback-min-candidates", type=int, default=2, help="Prefer at least this many final candidates unless the routed match is strong.")
+    parser.add_argument("--fallback-strong-score", type=int, default=60, help="Do not expand a small routed result when its best score reaches this value.")
+    parser.add_argument("--fallback-recall-limit", type=int, default=30, help="Maximum compact SQLite cards recalled before reranking.")
+    parser.add_argument("--disable-fallback", action="store_true", help="Disable automatic recall and rerank fallback.")
+    parser.add_argument("--force-fallback", action="store_true", help="Force recall and rerank for diagnostics and tests.")
     parser.add_argument("--verbose", action="store_true", help="Return full summaries and all tags in the final shortlist.")
     parser.add_argument("--legacy-hierarchy", action="store_true", help="Use the canonical single-route hierarchy instead of multi-label facets.")
     parser.add_argument("--catalog-shards", action="store_true", help="Continue into alphabetical catalog shards when semantic facets are exhausted.")
@@ -953,6 +1087,7 @@ def main() -> int:
                     visited_paths.add(selected_path)
                     args.path = selected_path
                     result = run_lazy_facet_route(args, metadata, store, keywords, index_dir)
+                result = apply_recall_fallback(args, result, store, keywords, index_dir)
                 if args.auto_route:
                     result["route_trace"] = route_trace
                 print(json.dumps(result, ensure_ascii=False, indent=2))

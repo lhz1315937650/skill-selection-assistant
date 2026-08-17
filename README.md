@@ -25,6 +25,7 @@ This project treats skill selection like lazy loading in a frontend application:
 ## Key Features
 
 - SQLite lazy routing for large local libraries.
+- Automatic SQLite FTS5/BM25 recall and rerank fallback for weak taxonomy matches.
 - Automatic domain, specialty, task, technology, output, and setup routing.
 - No recursive source-library freshness scan during normal recommendations.
 - No user-facing category-by-category questionnaire.
@@ -48,10 +49,17 @@ Normal request
     -> choose categories internally
     -> narrow the active candidate set
     -> read cards from the final route
+    -> if confidence is weak: recall Top N cards globally and rerank
     -> return the final weighted skills
 ```
 
 The default path never traverses all source skill files. A full source comparison runs only when explicitly requested or when an index must be created or repaired.
+
+### Recall And Rerank Fallback
+
+The taxonomy route remains the fast primary path. Fallback activates automatically when no candidate is returned, the top score is weak, or too few candidates survive without a strong match. It performs a bounded FTS5/BM25 search over compact SQLite fields, recalls at most 30 cards by default, and reranks them with name, capability-tag, summary, origin, duplicate, and local selection-memory signals.
+
+The fallback is local and deterministic. It does not reopen source `SKILL.md` files, call an embedding API, download a model, or scan the full filesystem.
 
 ## Performance
 
@@ -112,10 +120,14 @@ Normal output reaches the final shortlist directly:
 {
   "mode": "choose_skill",
   "storage_model": "sqlite_lazy",
+  "selection_model": "multi_label_facet_intersection",
   "index": {
     "freshness_policy": "explicit"
   },
   "branches": [],
+  "fallback": {
+    "triggered": false
+  },
   "candidates": [
     {
       "name": "example-skill",
@@ -179,7 +191,7 @@ Runtime data lives under the installed skill's `.skill-index/` directory and is 
 python tests/run-python-smoke-tests.py
 powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 powershell -ExecutionPolicy Bypass -File scripts/clean-local-artifacts.ps1
-powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.8.1
+powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1 -Version v1.9.0
 ```
 
 Repository layout:

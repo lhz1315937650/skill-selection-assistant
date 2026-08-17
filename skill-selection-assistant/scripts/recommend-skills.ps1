@@ -7,10 +7,16 @@ param(
   [int]$MinRecommendations = 1,
   [int]$ScoreWindow = 3,
   [int]$MinRelevanceScore = 3,
+  [int]$FallbackMinScore = 24,
+  [int]$FallbackMinCandidates = 2,
+  [int]$FallbackStrongScore = 60,
+  [int]$FallbackRecallLimit = 30,
   [string]$IndexDir = "",
   [string[]]$SkillsRoot = @(),
   [string]$Path = "",
   [switch]$StrictFreshness,
+  [switch]$DisableFallback,
+  [switch]$ForceFallback,
   [switch]$Legacy,
   [switch]$Compat
 )
@@ -214,8 +220,20 @@ if (-not $Legacy) {
       }
     }
 
-    $deepArgs = @($deepRouteScript, "--query", $Query, "--index-dir", $IndexDir, "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }), "--auto-route")
+    $deepArgs = @(
+      $deepRouteScript,
+      "--query", $Query,
+      "--index-dir", $IndexDir,
+      "--limit", $(if ($Limit -gt 0) { $Limit } else { $MaxRecommendations }),
+      "--fallback-min-score", $FallbackMinScore,
+      "--fallback-min-candidates", $FallbackMinCandidates,
+      "--fallback-strong-score", $FallbackStrongScore,
+      "--fallback-recall-limit", $FallbackRecallLimit,
+      "--auto-route"
+    )
     if (-not $StrictFreshness) { $deepArgs += "--allow-stale-index" }
+    if ($DisableFallback) { $deepArgs += "--disable-fallback" }
+    if ($ForceFallback) { $deepArgs += "--force-fallback" }
     if ($Path) { $deepArgs += @("--path", $Path) }
     $deepResult = (& $python.Source @deepArgs | Out-String | ConvertFrom-Json)
     if ($deepResult.mode -eq "index_stale") {
@@ -243,8 +261,10 @@ if (-not $Legacy) {
         generated_at = $(if ($currentDeepMetadata -and ($currentDeepMetadata.PSObject.Properties.Name -contains "generated_at")) { [string]$currentDeepMetadata.generated_at } else { "" })
       }
       route = $deepResult.current
+      selection_model = $(if ($deepResult.selection_model) { [string]$deepResult.selection_model } else { "multi_label_facet_intersection" })
       storage_model = $(if ($deepResult.storage_model) { [string]$deepResult.storage_model } else { "json_full" })
       route_trace = @($deepResult.route_trace)
+      fallback = $(if ($deepResult.fallback) { $deepResult.fallback } else { [pscustomobject]@{ triggered = $false } })
       branches = @($deepResult.branches)
       candidates = @($deepResult.candidates)
       next_step = $(switch ($deepResult.mode) {

@@ -170,8 +170,15 @@ try {
   Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
   Assert-True ($deepRecommendation.storage_model -eq "sqlite_lazy") "default PowerShell recommendation should use SQLite lazy loading"
   Assert-True ($deepRecommendation.index.freshness_policy -eq "explicit") "normal PowerShell routing should not scan the whole skill library"
+  Assert-True ($deepRecommendation.fallback.triggered -eq $false) "a strong PowerShell taxonomy match should not invoke fallback recall"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\lazy-route.sqlite3")) "default recommendation should create the SQLite lazy index"
   Assert-True (@($deepRecommendation.route_trace).Count -gt 0) "PowerShell recommendation should retain its internal route trace"
+  $fallbackRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $indexDir -ForceFallback | Out-String | ConvertFrom-Json)
+  Assert-True ($fallbackRecommendation.fallback.triggered -eq $true) "PowerShell should expose forced recall fallback"
+  Assert-True ($fallbackRecommendation.fallback.applied -eq $true) "PowerShell fallback should recall compact SQLite cards"
+  Assert-True ($fallbackRecommendation.selection_model -eq "taxonomy_then_recall_rerank") "PowerShell fallback should expose the two-stage model"
+  Assert-True ([int]$fallbackRecommendation.fallback.retained_routed_candidates -gt 0) "PowerShell fallback should retain stronger routed candidates"
+  Assert-True (@($fallbackRecommendation.candidates | Where-Object { $_.name -eq "frontend-design" }).Count -eq 1) "PowerShell fallback should retain the relevant frontend skill"
 
   Assert-True (Test-Path -LiteralPath $pythonRecommendScript) "cross-platform recommend-skills.py should exist"
   $pythonRecommendation = (& python $pythonRecommendScript --query "build a beautiful frontend UI" --index-dir $indexDir --skills-root $skillRoot --limit 3 | Out-String | ConvertFrom-Json)
@@ -346,7 +353,7 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.8.1" | Out-String | ConvertFrom-Json)
+  $packageResult = (& $packageScript -Version "v1.9.0" | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem

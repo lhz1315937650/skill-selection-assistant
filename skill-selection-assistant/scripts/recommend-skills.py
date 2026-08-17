@@ -85,6 +85,12 @@ def main() -> int:
     parser.add_argument("--freshness-cache-seconds", type=int, default=300)
     parser.add_argument("--force-freshness-check", action="store_true")
     parser.add_argument("--strict-freshness", action="store_true", help="Block the request until all configured skill roots are verified.")
+    parser.add_argument("--fallback-min-score", type=int, default=24)
+    parser.add_argument("--fallback-min-candidates", type=int, default=2)
+    parser.add_argument("--fallback-strong-score", type=int, default=60)
+    parser.add_argument("--fallback-recall-limit", type=int, default=30)
+    parser.add_argument("--disable-fallback", action="store_true")
+    parser.add_argument("--force-fallback", action="store_true", help="Force SQLite recall and reranking for diagnostics.")
     parser.add_argument("--compat", action="store_true", help="Include the deprecated nested deep_route object.")
     parser.add_argument("--compact", action="store_true", help="Emit compact JSON for lower token and logging overhead.")
     parser.add_argument(
@@ -145,6 +151,14 @@ def main() -> int:
         str(index_dir),
         "--limit",
         str(args.limit),
+        "--fallback-min-score",
+        str(args.fallback_min_score),
+        "--fallback-min-candidates",
+        str(args.fallback_min_candidates),
+        "--fallback-strong-score",
+        str(args.fallback_strong_score),
+        "--fallback-recall-limit",
+        str(args.fallback_recall_limit),
     ]
     if not args.show_branches:
         route_command.append("--auto-route")
@@ -160,6 +174,10 @@ def main() -> int:
         route_command.extend(["--leaf-target", str(args.leaf_target)])
     if args.verbose:
         route_command.append("--verbose")
+    if args.disable_fallback:
+        route_command.append("--disable-fallback")
+    if args.force_fallback:
+        route_command.append("--force-fallback")
 
     deep_result = run_json(route_command, "deep route selection")
     if deep_result.get("mode") == "index_stale":
@@ -196,8 +214,10 @@ def main() -> int:
             "generated_at": metadata.get("generated_at", ""),
         },
         "route": deep_result.get("current", {}),
+        "selection_model": deep_result.get("selection_model", "multi_label_facet_intersection"),
         "storage_model": deep_result.get("storage_model", "json_full"),
         "route_trace": deep_result.get("route_trace", []),
+        "fallback": deep_result.get("fallback", {"triggered": False}),
         "branches": deep_result.get("branches", []),
         "candidates": deep_result.get("candidates", []),
         "next_step": next_step,

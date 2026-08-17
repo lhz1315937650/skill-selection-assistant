@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 SOURCE_FILES = ("facets.json", "route-cards.json")
 
 
@@ -83,6 +83,13 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
             ) WITHOUT ROWID;
             CREATE INDEX facet_skill_level ON facet_memberships(skill_id, level, label);
             CREATE INDEX cards_canonical_name ON cards(canonical_name);
+            CREATE VIRTUAL TABLE cards_fts USING fts5(
+                skill_id UNINDEXED,
+                name,
+                function_summary,
+                capability_tags,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
         """)
         connection.executemany("INSERT INTO metadata(key, value) VALUES (?, ?)", [
             ("schema_version", SCHEMA_VERSION),
@@ -109,6 +116,18 @@ def build_database(deep_dir: Path, database: Path) -> dict[str, Any]:
                     str(card.get("logical_skill_md") or card.get("skill_md") or ""),
                     int(card.get("exact_duplicate_count") or 1),
                     int(card.get("variant_count") or 1),
+                )
+                for skill_id, card in cards.items()
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO cards_fts(skill_id, name, function_summary, capability_tags) VALUES (?, ?, ?, ?)",
+            [
+                (
+                    skill_id,
+                    str(card.get("name") or ""),
+                    str(card.get("function_summary") or ""),
+                    " ".join(str(tag) for tag in (card.get("capability_tags") or [])),
                 )
                 for skill_id, card in cards.items()
             ],

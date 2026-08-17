@@ -126,6 +126,7 @@ This mode is returned only during explicit strict freshness checks. Refresh the 
 - Prefer workflow fit over keyword overlap.
 - Merge identical content and keep meaningful same-name variants distinguishable.
 - Do not load the full hierarchy, detailed catalog, NDJSON index, or all route cards into model context during ordinary selection.
+- When the returned `fallback.triggered` value is true, use the already reranked final candidates normally. The fallback searches only compact SQLite cards and must not cause source skill bodies to be loaded.
 - Do not invent candidates that were not returned by the installing user's current index.
 - Do not expose classification tags, source paths, hashes, provenance,
   duplicate counts, or reference-file contents in the user-facing shortlist.
