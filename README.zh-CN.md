@@ -6,31 +6,32 @@
 
 中文 | [English](./README.md)
 
-一个面向大型 Codex skill 库的本地快速选择器。
+面向大型 Codex skill 库的本地选择器。它会先缩小请求范围，再返回最合适的几个 skill，不会扫描全部源 `SKILL.md`。
 
-它在构建索引时完成分类，结合当前项目上下文查询相关分类，并只返回最终候选。普通请求不会扫描全部源 `SKILL.md`。
+## 工作机制
+
+1. **识别请求**：分析项目上下文、任务意图、领域和技术栈。
+2. **分层分类**：按领域、专业方向、任务类型和技术栈逐步路由。
+3. **懒加载**：只加载当前分类对应的索引和候选 skill，其他分类保持不处理。
+4. **评分排序**：结合标签、正向示例和反向示例筛选候选结果。
+5. **兜底召回**：分类命中较弱时，使用 SQLite FTS5/BM25 进行全文召回和重排。
+6. **返回最终结果**：只给出最匹配的几个 skill，不要求用户逐分类选择。
+
+```text
+请求 -> 上下文 -> 分类路由 -> 懒加载 -> 评分排序 -> BM25 兜底 -> 最终 skill
+```
 
 ## 核心能力
 
-- 根据项目身份和技术栈补充上下文。
-- 使用正例和反例明确 skill 边界。
-- 通过 SQLite 懒加载当前分类路径。
-- 弱命中时使用 BM25 召回与重排兜底。
-- 全程本地运行，不需要 Embedding API 或额外模型。
-
-## 工作流程
-
-```text
-项目上下文
-    -> 分层 skill 画像
-    -> 分类路由
-    -> 召回与重排兜底
-    -> 最终候选
-```
+- SQLite 懒加载，适用于大型 skill 库。
+- 结合项目上下文进行分类。
+- 支持正向示例和反向示例。
+- BM25 召回与重排兜底。
+- 全程本地运行，无需 Embedding API 或额外模型。
 
 ## 安装
 
-要求 Python 3.10+。
+需要 Python 3.10+。
 
 ```bash
 git clone https://github.com/lhz1315937650/skill-selection-assistant.git
@@ -52,24 +53,16 @@ python scripts/recommend-skills.py \
   --compact
 ```
 
-结果会包含最终加权 skill、分类路径、项目上下文和兜底状态。
-
 ## 维护
 
 ```bash
-# 检查索引
 python scripts/doctor.py
-
-# 修复或重建索引
 python scripts/doctor.py --fix
-
-# 运行测试
 python tests/run-python-smoke-tests.py
-powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 ```
 
-本地索引保存在 `.skill-index/`，不会进入发布包。
+本地索引保存在 `.skill-index/`，不会打包进发布文件。
 
-## 许可
+## 许可证
 
 [MIT](./LICENSE)

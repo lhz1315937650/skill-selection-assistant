@@ -6,27 +6,28 @@
 
 [中文](./README.zh-CN.md) | English
 
-A fast, local skill router for large Codex skill libraries.
+A fast, local skill router for large Codex skill libraries. It narrows a request to the most relevant skills without scanning every source `SKILL.md`.
 
-It classifies skills during indexing, uses project context to select relevant categories, and returns only the final candidates. Normal requests never scan every source `SKILL.md`.
+## Mechanism
+
+1. **Classify the request** from the project context, task intent, domain, and technology signals.
+2. **Route by taxonomy** through layers such as domain, specialty, task type, and tech stack.
+3. **Lazy-load the route** so only the selected category is inspected; unrelated skills stay untouched.
+4. **Score and rerank candidates** using tags, positive examples, and negative examples.
+5. **Fallback with SQLite FTS5/BM25** when the route is weak, then rerank the recalled results.
+6. **Return only the final candidates** instead of asking the user to choose from every category.
+
+```text
+Request -> context -> category route -> lazy load -> score/rerank -> BM25 fallback -> final skills
+```
 
 ## Features
 
-- Context-aware routing from project identity and technology signals.
-- Positive and negative examples for clearer skill boundaries.
-- SQLite lazy loading for the selected classification path.
-- BM25 recall and reranking fallback for weak matches.
-- Local-only operation with no embedding API or model download.
-
-## Flow
-
-```text
-Project context
-    -> layered skill profile
-    -> taxonomy routing
-    -> recall and rerank fallback
-    -> final candidates
-```
+- SQLite lazy routing for large skill libraries.
+- Project-aware classification.
+- Positive and negative skill examples.
+- BM25 recall and reranking fallback.
+- Local-only operation; no embedding API or model download.
 
 ## Install
 
@@ -52,23 +53,15 @@ python scripts/recommend-skills.py \
   --compact
 ```
 
-The result contains the final weighted skills, selected route, project context, and fallback status.
-
 ## Maintenance
 
 ```bash
-# Diagnose the installed index
 python scripts/doctor.py
-
-# Repair or rebuild it
 python scripts/doctor.py --fix
-
-# Run tests
 python tests/run-python-smoke-tests.py
-powershell -ExecutionPolicy Bypass -File tests/run-smoke-tests.ps1
 ```
 
-Local indexes are stored in `.skill-index/` and are never included in releases.
+Local indexes are stored in `.skill-index/` and are not included in releases.
 
 ## License
 
