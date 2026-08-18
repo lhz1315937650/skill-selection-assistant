@@ -277,7 +277,7 @@ if (-not $Legacy) {
       candidates = @($deepResult.candidates)
       next_step = $(switch ($deepResult.mode) {
         "choose_category" { "Internal routing is ambiguous. Keep branch details AI-facing; do not show them to the user." }
-        "choose_skill" { "Present the compact candidates and ask which skill to activate. Read only the chosen SKILL.md." }
+        "choose_skill" { "Present each compact candidate with its name, concise function_summary description, and weight or a short match reason; never show a bare skill name. Ask which skill to activate. Read only the chosen SKILL.md." }
         "no_skills_installed" { "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill." }
         default { [string]$deepResult.instruction }
       })

@@ -904,8 +904,9 @@ def run_lazy_facet_route(
         "returned_candidates": len(candidates),
         "candidates": candidates,
         "instruction": (
-            "Present only each candidate's name, function_summary as its description, and score as its weight. "
-            "Ask which skill to activate. Read only the chosen SKILL.md after selection."
+            "Present each candidate with its name, function_summary as a concise description, and score as its weight "
+            "or a short match reason. Never show a bare skill name. Ask which skill to activate. Read only the chosen "
+            "SKILL.md after selection."
         ),
     }
 
@@ -1123,8 +1124,9 @@ def run_facet_route(
         "returned_candidates": len(result_candidates),
         "candidates": result_candidates,
         "instruction": (
-            "Present only each candidate's name, function_summary as its description, "
-            "and score as its weight. Ask which skill to activate. Do not display paths, "
+            "Present each candidate with its name, function_summary as a concise description, "
+            "and score as its weight or a short match reason. Never show a bare skill name. "
+            "Ask which skill to activate. Do not display paths, "
             "tags, provenance, setup metadata, or duplicate metadata. Read only the "
             "chosen SKILL.md after selection, and read its linked files only when needed."
         ),

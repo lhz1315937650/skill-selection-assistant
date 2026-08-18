@@ -373,7 +373,9 @@ def test_first_install_experience(temp: Path) -> None:
         assert_true("scanner_stdout" not in installed, "successful scanner output should not leak a formatted PowerShell table")
     assert_true(installed["deep_index_metadata"]["raw_files"] == 1, "--codex-home should scan its own skills directory")
     assert_true(installed["deep_index_metadata"]["skills_roots"] == [str(skills.resolve())], "custom Codex home must not fall back to another machine root")
-    assert_true(AGENTS_MARKER_START in (codex_home / "AGENTS.md").read_text(encoding="utf-8"), "explicit activation should append a managed AGENTS block")
+    agents_text = (codex_home / "AGENTS.md").read_text(encoding="utf-8")
+    assert_true(AGENTS_MARKER_START in agents_text, "explicit activation should append a managed AGENTS block")
+    assert_true("function_summary" in agents_text and "bare skill name" in agents_text, "AGENTS instructions should require concise skill summaries")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
     assert_true(installed["version"] == "1.10.0", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"

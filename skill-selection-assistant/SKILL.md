@@ -96,7 +96,7 @@ python scripts/recommend-skills.py --query "<user request>" --path "<exact path>
 
 1. Present the final 3-4 compact candidates in their ranked order (or all
    candidates when fewer than three exist).
-2. For each candidate, display only its name, description, and returned weight.
+2. For each candidate, display its name, a concise one-sentence summary of what it does (use `function_summary`), and its returned weight or a short match reason. Never output a bare skill name without an explanation.
 3. Ask which skill to activate.
 4. Read only the chosen `SKILL.md` after the user chooses.
 5. After activation, mention `setup_requirements` only if they affect the next

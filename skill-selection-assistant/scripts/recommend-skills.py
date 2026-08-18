@@ -200,9 +200,10 @@ def main() -> int:
     next_step = {
         "choose_category": "Internal routing is ambiguous. Keep branch details AI-facing; do not show them to the user.",
             "choose_skill": (
-                "Present only candidate name, description, and weight; ask which skill "
-                "to activate. Read only the chosen SKILL.md, then read linked files only "
-                "when the active task needs them."
+                "Present each candidate with its name, concise function_summary description, "
+                "and weight or a short match reason; never show a bare skill name. Ask which "
+                "skill to activate. Read only the chosen SKILL.md, then read linked files "
+                "only when the active task needs them."
             ),
         "no_skills_installed": "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill.",
     }.get(mode, str(deep_result.get("instruction") or ""))
