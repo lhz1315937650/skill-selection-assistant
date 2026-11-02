@@ -390,7 +390,7 @@ if (-not $route.available) {
 if (($route.route_type -eq "specialty") -and $route.task_hint) {
   $leafCategory = "specialty=$($route.category)|task=$($route.task_hint)"
   $leafRouteInfo = Get-FirstRouteInfo -Summary $summary -RouteType "adaptive_leaf" -Category $leafCategory
-  if (($leafRouteInfo.Count -gt 0) -and (([int]$route.route_count -le 0) -or ([int]$leafRouteInfo[0].count -lt [int]$route.route_count))) {
+  if ($leafRouteInfo.Count -gt 0) {
     $route.route_type = "adaptive_leaf"
     $route.category = $leafCategory
     $route.route_count = $leafRouteInfo[0].count
