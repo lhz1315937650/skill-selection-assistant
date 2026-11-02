@@ -358,7 +358,8 @@ try {
     $mismatchedPackageRejected = $true
   }
   Assert-True $mismatchedPackageRejected "package-release.ps1 should reject a tag that disagrees with VERSION"
-  $packageResult = (& $packageScript -Version "v1.10.0" | Out-String | ConvertFrom-Json)
+  $declaredPackageVersion = (Get-Content -LiteralPath (Join-Path $repoRoot "skill-selection-assistant\VERSION") -Raw -Encoding UTF8).Trim()
+  $packageResult = (& $packageScript -Version ("v" + $declaredPackageVersion) | Out-String | ConvertFrom-Json)
   Assert-True (Test-Path -LiteralPath $packageResult.Zip) "package-release.ps1 should create a zip"
   Assert-True ([int64]$packageResult.Length -gt 0) "package zip should not be empty"
   Add-Type -AssemblyName System.IO.Compression.FileSystem
