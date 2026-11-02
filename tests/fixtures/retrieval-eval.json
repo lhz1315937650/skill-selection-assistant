@@ -1,0 +1,14 @@
+{
+  "queries": [
+    {"query":"frontend dashboard","relevant":["frontend-design"]},{"query":"polish a React page","relevant":["frontend-design"]},{"query":"create a web interface","relevant":["frontend-design"]},
+    {"query":"test a local web app","relevant":["webapp-testing"]},{"query":"debug browser behavior","relevant":["webapp-testing"]},{"query":"check frontend bugs","relevant":["webapp-testing"]},
+    {"query":"maintain project README","relevant":["readme-maintainer"]},{"query":"write onboarding documentation","relevant":["readme-maintainer"]},{"query":"update repository setup notes","relevant":["readme-maintainer"]},
+    {"query":"organize repository folders","relevant":["repo-cleanup-helper"]},{"query":"clean project structure","relevant":["repo-cleanup-helper"]},{"query":"prepare local setup notes","relevant":["repo-cleanup-helper"]},
+    {"query":"build a bot plugin","relevant":["bot-plugin-helper"]},{"query":"message handler workflow","relevant":["bot-plugin-helper"]},{"query":"integrate a local bot project","relevant":["bot-plugin-helper"]},
+    {"query":"review documentation wording","relevant":["setup-docs-only"]},{"query":"improve concise technical explanations","relevant":["setup-docs-only"]},{"query":"edit a documentation guide","relevant":["setup-docs-only"]},
+    {"query":"use an explicit API client","relevant":["explicit-api-client"]},{"query":"call an external API","relevant":["explicit-api-client"]},{"query":"configure API authentication","relevant":["explicit-api-client"]},
+    {"query":"work on a local project","relevant":["project-helper"]},{"query":"debug project code","relevant":["project-helper"]},{"query":"organize a plugin repository","relevant":["project-helper"]},
+    {"query":"write an academic paper","relevant":["academic-paper"]},{"query":"structure a research manuscript","relevant":["academic-paper"]},{"query":"prepare scholarly writing","relevant":["academic-paper"]},
+    {"query":"test a spreadsheet workflow","relevant":["spreadsheet-data"]},{"query":"analyze tabular data","relevant":["spreadsheet-data"]},{"query":"clean spreadsheet data","relevant":["spreadsheet-data"]}
+  ]
+}

@@ -21,6 +21,7 @@ FIXTURES = REPO / "tests" / "fixtures" / "skills"
 CLASSIFIER = SKILL_DIR / "scripts" / "deep-classify-skills.py"
 ROUTER = SKILL_DIR / "scripts" / "deep-route.py"
 RECOMMENDER = SKILL_DIR / "scripts" / "recommend-skills.py"
+INGEST = SKILL_DIR / "scripts" / "ingest-skill.py"
 INSTALLER = REPO / "scripts" / "install-skill.py"
 AGENTS_MARKER_START = "<!-- skill-selection-assistant:start -->"
 
@@ -111,10 +112,14 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true((index / "deep" / "lazy-route.sqlite3").exists(), "default routing should create the SQLite lazy index")
     assert_true(result["route_trace"], "automatic recommendation should retain an internal route trace")
     assert_true("frontend-design" in [item["name"] for item in result["candidates"]], "frontend skill should remain in the final route")
+    frontend_candidate = next(item for item in result["candidates"] if item["name"] == "frontend-design")
+    assert_true(frontend_candidate.get("can_do") or frontend_candidate.get("does"), "recommended skills should expose what they can do")
+    assert_true(frontend_candidate.get("cannot_do") or frontend_candidate.get("does_not"), "recommended skills should expose what they cannot do")
     route_cards = json.loads((index / "deep" / "route-cards.json").read_text(encoding="utf-8"))
     frontend_card = next(value for value in route_cards.values() if value["name"] == "frontend-design")
     assert_true(frontend_card["selection_positive_examples"], "classifier should extract positive selection examples")
     assert_true(frontend_card["selection_negative_examples"], "classifier should extract negative selection examples")
+    assert_true(any("backend" in str(value).lower() for value in (frontend_card.get("does_not") or [])), "function profile should record what the skill cannot do")
     assert_true("backend-database" not in frontend_card["capability_tags"], "negative examples must not pollute positive capability tags")
     router_module = load_module("deep_router_layered_profile_test", ROUTER)
     positive_tokens = router_module.tokens("create a polished frontend page")
@@ -171,7 +176,7 @@ def test_routing_and_incremental(temp: Path) -> None:
         check=False,
     )
     invalid_result = json.loads(invalid.stdout)
-    assert_true(invalid.returncode == 1 and invalid_result["mode"] == "error" and not invalid.stderr, "expected routing errors should be structured without tracebacks")
+    assert_true(invalid.returncode == 0 and invalid_result["mode"] in {"choose_skill", "no_skills_installed"} and not invalid.stderr, "unknown facet paths should skip missing tags instead of failing")
 
     target = root / "frontend-design" / "SKILL.md"
     target.write_text(target.read_text(encoding="utf-8") + "\nIncremental change.\n", encoding="utf-8")
@@ -198,6 +203,18 @@ def test_routing_and_incremental(temp: Path) -> None:
     assert_true(json.loads((index / "deep" / "metadata.json").read_text(encoding="utf-8"))["raw_files"] == 1, "root-set refresh must not retain sources from old roots")
 
     (index / "deep" / "route-cards.json").write_text("{broken", encoding="utf-8")
+    sqlite_survives = run_json([
+        sys.executable,
+        str(RECOMMENDER),
+        "--query",
+        "use replacement",
+        "--index-dir",
+        str(index),
+        "--compact",
+    ])
+    assert_true(sqlite_survives["index"]["refreshed"] is False, "corrupt JSON cards must not force a full rebuild when SQLite is healthy")
+    sqlite_path = index / "deep" / "lazy-route.sqlite3"
+    sqlite_path.unlink()
     repaired = run_json([
         sys.executable,
         str(RECOMMENDER),
@@ -205,9 +222,108 @@ def test_routing_and_incremental(temp: Path) -> None:
         "use replacement",
         "--index-dir",
         str(index),
+        "--skills-root",
+        str(replacement.parent),
+        "--compact",
     ])
-    assert_true(repaired["index"]["refreshed"] and repaired["index"]["refresh_reason"] == "index_corrupt", "a corrupt routing artifact should be rebuilt automatically")
-    assert_true(json.loads((index / "deep" / "route-cards.json").read_text(encoding="utf-8")), "automatic repair should publish valid route cards")
+    assert_true(repaired["index"]["refreshed"], "a corrupt SQLite index should be rebuilt automatically")
+
+
+def test_ingest_new_domain_without_full_scan(temp: Path) -> None:
+    root = temp / "skills"
+    index = temp / "index"
+    shutil.copytree(FIXTURES, root)
+    first = build(root, index)
+    assert_true(first["reclassified_files"] == 13, "baseline fixture library should be classified once")
+    pottery = root / "kintsugi-urushi-repair"
+    pottery.mkdir()
+    skill_md = pottery / "SKILL.md"
+    skill_md.write_text(
+        "---\nname: kintsugi-urushi-repair\ndescription: Repair raku chawan with urushi lacquer and gold kintsugi.\n---\n# Kintsugi Urushi Repair\nUse this skill for kintsugi, urushi lacquer, raku chawan repair, and gold seam restoration.\n适用于金缮、漆器和茶碗修复。\n",
+        encoding="utf-8",
+    )
+    ingested = run_json([
+        sys.executable,
+        str(INGEST),
+        "--skill-md",
+        str(skill_md),
+        "--skill-dir",
+        str(SKILL_DIR),
+        "--index-dir",
+        str(index),
+    ])
+    assert_true(ingested["full_library_scan"] is False and ingested["scanned_files"] == 1, "ingest must read only the new skill")
+    assert_true(ingested["created_tags"], "a brand-new domain should add tags instead of forcing general")
+    overlay = json.loads((index / "deep" / "tag-overlay.json").read_text(encoding="utf-8"))
+    assert_true(overlay.get("domain_detail_rules") or overlay.get("specialty_rules"), "new-domain tags should persist in the overlay")
+    assert_true(ingested.get("json_cards_rewritten") is False, "ingest must not rewrite the whole JSON card catalog")
+    import sqlite3
+    database = index / "deep" / "lazy-route.sqlite3"
+    with sqlite3.connect(database) as connection:
+        row = connection.execute("SELECT name, function_weight, does, skill_id FROM cards WHERE name = ?", ("kintsugi-urushi-repair",)).fetchone()
+        assert_true(row is not None, "the ingested skill card should be inserted into SQLite")
+        assert_true("kintsugi" in str(row[2]).lower() or "repair" in str(row[2]).lower(), "function profile should store does examples")
+        skill_id = str(row[3])
+        alias_hit = connection.execute("SELECT alias FROM tag_aliases WHERE alias IN ('kintsugi', '金缮', 'urushi') LIMIT 1").fetchone()
+        assert_true(alias_hit is not None, "new-domain aliases should land in the tag alias index")
+    recommended = run_json([
+        sys.executable,
+        str(RECOMMENDER),
+        "--query",
+        "repair a raku chawan with urushi lacquer and gold kintsugi",
+        "--index-dir",
+        str(index),
+        "--no-project-context",
+        "--compact",
+    ])
+    names = [item["name"] for item in recommended.get("candidates") or []]
+    assert_true("kintsugi-urushi-repair" in names, f"tag-based recommendation should return the ingested skill, got {names}")
+    for name in ("route-cards.json", "facets.json", "label-keywords.json", "hierarchy.json"):
+        path = index / "deep" / name
+        if path.exists():
+            path.unlink()
+    sqlite_only = run_json([
+        sys.executable,
+        str(RECOMMENDER),
+        "--query",
+        "用金缮和漆器修复茶碗",
+        "--index-dir",
+        str(index),
+        "--no-project-context",
+        "--compact",
+    ])
+    sqlite_names = [item["name"] for item in sqlite_only.get("candidates") or []]
+    assert_true("kintsugi-urushi-repair" in sqlite_names, f"SQLite-only Chinese tag recall should return the ingested skill, got {sqlite_names}")
+    pending_dir = root / "pending-gold-leaf"
+    pending_dir.mkdir()
+    (pending_dir / "SKILL.md").write_text("---\nname: pending-gold-leaf\ndescription: unused body\n---\n", encoding="utf-8")
+    pending = run_json([
+        sys.executable, str(INGEST), "--list-pending", "--skills-root", str(root), "--skill-dir", str(SKILL_DIR), "--index-dir", str(index),
+    ])
+    assert_true(pending["read_skill_bodies"] is False and pending["pending_count"] >= 1, "pending discovery must not read skill bodies")
+    assert_true(any(item["name"] == "pending-gold-leaf" for item in pending["pending"]), "directory listing should find the new skill folder")
+    updated = run_json([
+        sys.executable, str(INGEST), "--skill-md", str(skill_md), "--skill-dir", str(SKILL_DIR), "--index-dir", str(index),
+    ])
+    assert_true(updated["skill_id"] == ingested["skill_id"], "re-ingesting the same skill should upsert rather than duplicate")
+    memory = run_json([
+        sys.executable,
+        str(SKILL_DIR / "scripts" / "record-selection-memory.py"),
+        "--query", "private kintsugi request",
+        "--outcome", "selected",
+        "--selected-skill", "kintsugi-urushi-repair",
+        "--skill-id", skill_id,
+        "--index-dir", str(index),
+    ])
+    assert_true(memory.get("weight_update", {}).get("status") == "updated", "selection feedback should write skill weights")
+    assert_true(memory.get("weight_update", {}).get("skill_id") == skill_id, "feedback should update by skill_id")
+    deleted = run_json([
+        sys.executable, str(INGEST), "--skill-md", str(skill_md), "--delete", "--skill-dir", str(SKILL_DIR), "--index-dir", str(index),
+    ])
+    assert_true(deleted["mode"] == "delete_skill" and deleted["sqlite"]["status"] == "deleted", "delete should remove only the ingested skill")
+    with sqlite3.connect(database) as connection:
+        leftover = connection.execute("SELECT COUNT(*) FROM cards WHERE name = ?", ("kintsugi-urushi-repair",)).fetchone()[0]
+        assert_true(leftover == 0, "deleted skill card should be gone")
 
 
 def test_manifest_scope(temp: Path) -> None:
@@ -377,7 +493,7 @@ def test_first_install_experience(temp: Path) -> None:
     assert_true(AGENTS_MARKER_START in agents_text, "explicit activation should append a managed AGENTS block")
     assert_true("function_summary" in agents_text and "bare skill name" in agents_text, "AGENTS instructions should require concise skill summaries")
     assert_true(installed["activation_state"] == "managed", "a prose-only repository mention must not be mistaken for activation")
-    assert_true(installed["version"] == "1.10.0", "installer should report the installed version")
+    assert_true(installed["version"] == "1.13.1", "installer should report the installed version")
     installed_dir = codex_home / "skills" / "skill-selection-assistant"
     memory = run_json([
         sys.executable,
@@ -484,6 +600,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="skill-selection-python-smoke-") as value:
         temp = Path(value)
         test_routing_and_incremental(temp / "routing")
+        test_ingest_new_domain_without_full_scan(temp / "ingest")
         test_manifest_scope(temp / "scope")
         test_failure_manifest_and_memory_scope(temp / "failure")
         test_linked_skill_and_concurrent_publish(temp / "linked")

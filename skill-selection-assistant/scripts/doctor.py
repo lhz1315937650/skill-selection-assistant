@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -21,17 +22,46 @@ def load_json(path: Path) -> Any:
 
 def inspect_index(index_dir: Path) -> tuple[bool, str, dict[str, Any]]:
     deep_dir = index_dir / "deep"
+    database = deep_dir / "lazy-route.sqlite3"
+    metadata: dict[str, Any] = {}
+    metadata_corrupt = False
+    metadata_path = deep_dir / "metadata.json"
+    if metadata_path.exists():
+        try:
+            loaded = load_json(metadata_path)
+            if isinstance(loaded, dict):
+                metadata = loaded
+        except (OSError, ValueError, json.JSONDecodeError):
+            metadata = {}
+            metadata_corrupt = True
+    if database.exists():
+        if metadata_corrupt:
+            return False, "corrupt:metadata.json", metadata
+        connection = None
+        try:
+            connection = sqlite3.connect(database)
+            tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            values = dict(connection.execute("SELECT key, value FROM metadata"))
+            if "cards" not in tables:
+                return False, "missing:cards", metadata
+            metadata.setdefault("schema_version", DEEP_SCHEMA_VERSION)
+            metadata["unique_content_candidates"] = int(values.get("skill_count") or metadata.get("unique_content_candidates") or 0)
+            return True, "", metadata
+        except (OSError, sqlite3.Error, TypeError, ValueError):
+            return False, "corrupt:lazy-route.sqlite3", metadata
+        finally:
+            if connection is not None:
+                connection.close()
     for name in REQUIRED_ROUTING_FILES:
         path = deep_dir / name
         if not path.exists():
-            return False, f"missing:{name}", {}
+            return False, f"missing:{name}", metadata
         try:
             payload = load_json(path)
         except (OSError, ValueError, json.JSONDecodeError):
-            return False, f"corrupt:{name}", {}
+            return False, f"corrupt:{name}", metadata
         if not isinstance(payload, dict):
-            return False, f"corrupt:{name}", {}
-    metadata = load_json(deep_dir / "metadata.json")
+            return False, f"corrupt:{name}", metadata
     if metadata.get("schema_version") != DEEP_SCHEMA_VERSION:
         return False, "schema-mismatch:metadata.json", metadata
     return True, "", metadata

@@ -96,7 +96,7 @@ python scripts/recommend-skills.py --query "<user request>" --path "<exact path>
 
 1. Present the final 3-4 compact candidates in their ranked order (or all
    candidates when fewer than three exist).
-2. For each candidate, display its name, a concise one-sentence summary of what it does (use `function_summary`), and its returned weight or a short match reason. Never output a bare skill name without an explanation.
+2. For each candidate, display its name, a concise summary, what it can do (`can_do`/`does`), what it cannot do (`cannot_do`/`does_not`), and its returned weight or a short match reason. Never output a bare skill name without an explanation.
 3. Ask which skill to activate.
 4. Read only the chosen `SKILL.md` after the user chooses.
 5. After activation, mention `setup_requirements` only if they affect the next
@@ -190,6 +190,15 @@ On first installation:
 - run a first recommendation health check
 
 On later refreshes, reuse unchanged classifications and read only added or modified skill files when schema, classifier, and rules fingerprints remain compatible.
+
+When a new skill is added, ingest that file only:
+
+```bash
+python scripts/ingest-skill.py --skill-md "<path-to-SKILL.md>"
+python scripts/ingest-skill.py --list-pending --skills-root "<skills-root>"
+```
+
+Do not scan the rest of the library. Extract the skill's function profile, upsert it in SQLite, reuse or merge tags, and add overlay tags only for a new domain. Use `--delete` to remove one skill. Ordinary recommendation reads SQLite tags and cards only. It still returns a high-weight shortlist for the user to choose; it does not auto-activate a skill.
 
 Before normal routing, validate the required deep artifacts and schema only. Do not recursively enumerate configured skill roots or compare every source `SKILL.md` during an ordinary request. Source-library freshness belongs to installation, update, `doctor --fix`, or an explicit `--strict-freshness` request. Rebuild missing, incomplete, corrupt, or old-schema indexes, recovering configured roots from `source-manifest.json` when possible.
 

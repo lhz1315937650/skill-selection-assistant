@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 import time
+import importlib.util
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from datetime import datetime
@@ -22,12 +23,18 @@ from typing import Any, Iterable
 
 SCHEMA_VERSION = "2.6.0"
 DEFAULT_LEAF_TARGET = 24
+OVERLAY_FILE = "tag-overlay.json"
+GENERIC_FUNCTION_LABELS = {"general", "coding-general", "workflow"}
+TAG_STOPWORDS = {
+    "skill", "helper", "assistant", "the", "and", "for", "with", "this", "that", "from",
+    "using", "use", "into", "local", "your", "you", "when", "then", "into", "about",
+}
 MAX_TAGS = {
-    "domain_detail": 6,
-    "specialty": 8,
-    "task_type": 6,
-    "output_type": 6,
-    "tech_stack": 10,
+    "domain_detail": 4,
+    "specialty": 5,
+    "task_type": 4,
+    "output_type": 3,
+    "tech_stack": 6,
 }
 
 TECH_RULES = {
@@ -139,6 +146,292 @@ def dump_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def empty_overlay() -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "domain_detail_rules": {},
+        "specialty_rules": {},
+        "task_type_rules": {},
+        "primary_map": {},
+    }
+
+
+def load_tag_overlay(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return empty_overlay()
+    try:
+        payload = load_json(path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return empty_overlay()
+    overlay = empty_overlay()
+    if isinstance(payload, dict):
+        for key in ("domain_detail_rules", "specialty_rules", "task_type_rules", "primary_map"):
+            values = payload.get(key)
+            if isinstance(values, dict):
+                overlay[key] = {str(name): str(pattern) for name, pattern in values.items() if name}
+    return overlay
+
+
+def merge_overlay_into_rules(rules: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(rules)
+    merged["domain_detail_rules"] = {**dict(rules.get("domain_detail_rules") or {}), **overlay.get("domain_detail_rules", {})}
+    merged["specialty_rules"] = {**dict(rules.get("specialty_rules") or {}), **overlay.get("specialty_rules", {})}
+    merged["task_rules"] = {**dict(rules.get("task_rules") or {}), **overlay.get("task_type_rules", {})}
+    merged["primary_map"] = {**dict(rules.get("primary_map") or {}), **overlay.get("primary_map", {})}
+    return merged
+
+
+def distinctive_tokens(text: str) -> list[str]:
+    tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9]{2,}|[\u4e00-\u9fff]{2,}", str(text or "").lower())
+    return [token for token in dict.fromkeys(tokens) if token not in TAG_STOPWORDS][:12]
+
+
+def keyword_pattern(tokens: list[str]) -> str:
+    useful = [re.escape(token) for token in tokens if token and token not in TAG_STOPWORDS][:8]
+    return "|".join(useful) if useful else "general"
+
+
+def infer_primary_domain(text: str, rules: dict[str, Any]) -> str:
+    lowered = text.lower()
+    if re.search(r"code|script|software|program|api|app|repo|python|typescript", lowered):
+        return "coding"
+    if re.search(r"paper|research|academic|literature|citation", lowered):
+        return "research"
+    if re.search(r"data|chart|statistics|csv|excel", lowered):
+        return "data"
+    if re.search(r"write|article|blog|copy|translate", lowered):
+        return "writing"
+    return str((rules.get("primary_map") or {}).get("general") or "general")
+
+
+def propose_function_label(item: dict[str, Any], level: str, existing: set[str]) -> str:
+    tokens = distinctive_tokens(f"{item.get('name') or ''} {item.get('function_summary') or ''}")
+    name_slug = safe_slug(str(item.get("canonical_name") or item.get("name") or "new-skill"))
+    if level == "specialty":
+        label = name_slug[:48]
+    else:
+        label = safe_slug("-".join(tokens[:3]) or name_slug)[:48]
+    if not label or label in GENERIC_FUNCTION_LABELS:
+        label = name_slug[:48] or "new-domain"
+    if label in existing and label not in GENERIC_FUNCTION_LABELS:
+        return label
+    if label in existing:
+        label = f"{label}-domain" if level == "domain_detail" else f"{label}-specialty"
+    return label or "new-domain"
+
+
+def first_sentence(text: str) -> str:
+    value = normalize_text(text)
+    if not value:
+        return ""
+    parts = re.split(r"(?<=[。！？.!?])\s+", value, maxsplit=1)
+    return parts[0][:220]
+
+
+def humanize_label(value: str) -> str:
+    return re.sub(r"[-_]+", " ", str(value or "")).strip()
+
+
+def capability_bullet(value: str) -> str:
+    cleaned = clean_selection_example(value)
+    cleaned = re.sub(r"^(?:use this skill (?:for|when|to)|use for|this skill (?:is for|helps)|适用于)\s+", "", cleaned, flags=re.I)
+    return cleaned[:180].rstrip(" .")
+
+
+def is_noise_capability(value: str) -> bool:
+    lowered = str(value or "").lower()
+    if not lowered or len(lowered) < 8:
+        return True
+    noise_bits = (
+        "activates automatically",
+        "in your request",
+        "this skill activates",
+        "help me with",
+        "how do i implement",
+    )
+    return any(bit in lowered for bit in noise_bits) or lowered.startswith("mention ")
+
+
+def enrich_function_profile(item: dict[str, Any], body: str = "") -> dict[str, Any]:
+    purpose = first_sentence(item.get("function_summary") or "")
+    if not purpose:
+        purpose = first_sentence(body) or str(item.get("name") or "")
+    source_text = f"{item.get('function_summary') or ''}\n{body or item.get('function_detail') or ''}"
+    does: list[str] = []
+    does_not: list[str] = []
+    if purpose:
+        does.append(purpose)
+    for value in item.get("selection_positive_examples") or []:
+        bullet = capability_bullet(str(value))
+        if bullet and not is_noise_capability(bullet):
+            does.append(bullet)
+    heading_skip = re.compile(
+        r"^(?:step\s+\d|phase\s+\d|prerequisites?|setup|purpose|overview|instructions|usage|introduction|intro|readme|notes?|examples?|references?|assets|core workflow|tool discovery|when to use|when not to use)$",
+        re.I,
+    )
+    for heading in item.get("headings") or []:
+        value = str(heading).strip()
+        lowered = value.lower()
+        if not value or heading_skip.match(lowered):
+            continue
+        if re.search(r"when not|do not|not to use|out of scope|limitations?|cannot|不适用|不能|禁止", lowered):
+            continue
+        if len(value.split()) < 4:
+            continue
+        if re.search(r"\b(build|create|write|analy|repair|design|test|review|generate|draft|clean|classif|recommend|debug|deploy)\b", lowered) and len(does) < 8:
+            bullet = capability_bullet(value)
+            if bullet and not is_noise_capability(bullet):
+                does.append(bullet)
+    for value in item.get("selection_negative_examples") or []:
+        bullet = capability_bullet(str(value))
+        if bullet:
+            does_not.append(bullet)
+    for match in re.finditer(
+        r"(?im)^.*(?:do not use|not suitable for|avoid using|out of scope|不适用于|不要使用|不能用于|并非用于).*$",
+        source_text,
+    ):
+        bullet = capability_bullet(match.group(0))
+        if bullet and "cannot finish" not in bullet.lower():
+            does_not.append(bullet)
+    unique_does: list[str] = []
+    for value in does:
+        if any(value.lower() in existing.lower() or existing.lower() in value.lower() for existing in unique_does):
+            continue
+        unique_does.append(value)
+    does = unique_does
+    if not does_not:
+        focus = ", ".join(
+            str(value)
+            for value in list(dict.fromkeys([*(item.get("specialty") or []), *(item.get("domain_detail") or [])]))[:4]
+            if value and value not in GENERIC_FUNCTION_LABELS
+        )
+        if purpose:
+            does_not.append("Do not use for work outside this function: " + purpose[:120])
+        if focus:
+            does_not.append("Not a substitute for unrelated domains; stay on: " + focus)
+        requirements = item.get("setup_requirements") or [item.get("setup_level") or "unknown"]
+        if "api-key" in requirements:
+            does_not.append("Cannot finish the task without the required API key")
+        if "account" in requirements:
+            does_not.append("Cannot finish the task without the required account login")
+        if "network" in requirements:
+            does_not.append("Cannot run fully offline; network access is required")
+    aliases = distinctive_tokens(f"{item.get('name') or ''} {purpose} {item.get('function_summary') or ''} {source_text[:1200]}")
+    item["function_purpose"] = purpose
+    item["function_summary"] = purpose or str(item.get("function_summary") or "")[:220]
+    item["aliases"] = aliases
+    item["does"] = list(dict.fromkeys(value for value in does if value))[:8]
+    item["does_not"] = list(dict.fromkeys(value for value in does_not if value))[:8]
+    item["can_do"] = item["does"]
+    item["cannot_do"] = item["does_not"]
+    item["function_weight"] = int(item.get("function_weight") or 100)
+    profile = dict(item.get("functional_profile") or {})
+    profile["purpose"] = purpose
+    profile["aliases"] = aliases
+    profile["does"] = item["does"]
+    profile["does_not"] = item["does_not"]
+    profile["can_do"] = item["does"]
+    profile["cannot_do"] = item["does_not"]
+    item["functional_profile"] = profile
+    return item
+
+
+def similar_existing_label(tokens: list[str], existing: set[str], keyword_map: dict[str, str]) -> str:
+    token_set = {token.lower() for token in tokens if token and token not in GENERIC_FUNCTION_LABELS}
+    if not token_set:
+        return ""
+    best_label = ""
+    best_score = 0.0
+    for label in existing:
+        if label in GENERIC_FUNCTION_LABELS:
+            continue
+        parts = {part for part in re.split(r"[-_]+", label.lower()) if part}
+        keyword_parts = set(distinctive_tokens(keyword_map.get(label, "")))
+        overlap = token_set.intersection(parts.union(keyword_parts).union({label.lower()}))
+        score = len(overlap) / max(1, min(len(token_set), max(1, len(parts) or 1)))
+        if label.lower() in token_set or any(token in label.lower() for token in token_set if len(token) >= 4):
+            score = max(score, 0.6)
+        if score > best_score:
+            best_label, best_score = label, score
+    return best_label if best_score >= 0.45 else ""
+
+
+def apply_new_domain_tags(
+    item: dict[str, Any],
+    existing_labels: dict[str, set[str]],
+    overlay: dict[str, Any],
+    rules: dict[str, Any],
+) -> list[dict[str, str]]:
+    created: list[dict[str, str]] = []
+    text = f"{item.get('name') or ''} {item.get('function_summary') or ''} {' '.join(item.get('aliases') or [])}"
+    tokens = list(dict.fromkeys([*(item.get('aliases') or []), *distinctive_tokens(text)]))
+    pattern = keyword_pattern(tokens + [str(item.get("canonical_name") or "")])
+    level_to_overlay = {"domain_detail": "domain_detail_rules", "specialty": "specialty_rules"}
+    for level, overlay_key in level_to_overlay.items():
+        values = [str(value) for value in (item.get(level) or []) if value]
+        specific = [value for value in values if value not in GENERIC_FUNCTION_LABELS]
+        if specific:
+            continue
+        existing = existing_labels.get(level) or set()
+        keyword_map = overlay.get(overlay_key) or {}
+        merged = similar_existing_label(tokens, existing, keyword_map)
+        label = merged or propose_function_label(item, level, existing)
+        is_new = not merged and label not in existing
+        item[level] = [label, *[value for value in values if value != "general" and value != label]]
+        if is_new:
+            overlay.setdefault(overlay_key, {})[label] = pattern
+            created.append({
+                "level": level,
+                "label": label,
+                "origin": "overlay",
+                "keywords": pattern,
+                "aliases": tokens,
+                "canonical_label": label,
+            })
+            existing.add(label)
+        else:
+            current = str(overlay.setdefault(overlay_key, {}).get(label) or "")
+            merged_pattern = "|".join(part for part in dict.fromkeys([current, pattern] + tokens) if part)
+            overlay[overlay_key][label] = merged_pattern
+            created.append({
+                "level": level,
+                "label": label,
+                "origin": "overlay",
+                "keywords": merged_pattern,
+                "aliases": tokens,
+                "canonical_label": label,
+                "merged": True,
+            })
+        if level == "domain_detail":
+            primary = str((rules.get("primary_map") or {}).get(label) or overlay.get("primary_map", {}).get(label) or "")
+            if not primary:
+                primary = infer_primary_domain(text, rules)
+                overlay.setdefault("primary_map", {})[label] = primary
+            item["primary_domain"] = primary
+            item["primary_domains"] = list(dict.fromkeys([primary, *(item.get("primary_domains") or [])]))
+    route = dict(item.get("primary_route") or {})
+    route["primary_domain"] = item.get("primary_domain") or route.get("primary_domain") or "general"
+    route["primary_domains"] = item.get("primary_domains") or [route["primary_domain"]]
+    route["domain_detail"] = (item.get("domain_detail") or ["general"])[0]
+    route["specialty"] = (item.get("specialty") or ["general"])[0]
+    item["primary_route"] = route
+    item["capability_tags"] = list(dict.fromkeys(
+        list(item.get("domain_detail") or [])
+        + list(item.get("specialty") or [])
+        + list(item.get("task_type") or [])
+        + list(item.get("output_type") or [])
+        + list(item.get("tech_stack") or [])
+        + list(item.get("setup_requirements") or [])
+        + list(item.get("capability_tags") or [])
+    ))
+    profile = dict(item.get("functional_profile") or {})
+    profile["primary_domains"] = item.get("primary_domains")
+    profile["domain_labels"] = item.get("domain_detail")
+    profile["specialty_labels"] = item.get("specialty")
+    item["functional_profile"] = profile
+    return created
+
+
 def normalize_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
@@ -199,8 +492,8 @@ def clean_selection_example(value: str) -> str:
 def extract_selection_examples(description: str, body: str) -> tuple[list[str], list[str]]:
     positive: list[str] = []
     negative: list[str] = []
-    positive_heading = re.compile(r"when to use|use cases?|triggers?|适用|使用场景|触发", re.I)
-    negative_heading = re.compile(r"when not to use|do not use|not suitable|avoid using|不适用|不要使用|禁用场景", re.I)
+    positive_heading = re.compile(r"when to use|use cases?|triggers?|capabilities|can do|适用|使用场景|触发|能做|可以做", re.I)
+    negative_heading = re.compile(r"when not to use|do not use|not suitable|avoid using|out of scope|limitations?|cannot|不适用|不要使用|禁用场景|不能做|不可以做", re.I)
     current = ""
     for raw_line in body.splitlines():
         heading = re.match(r"^#{1,5}\s+(.+?)\s*$", raw_line)
@@ -300,6 +593,7 @@ def score_rule_set(
     compiled: dict[str, re.Pattern[str]],
     minimum: int,
     maximum: int,
+    require_identity: bool = False,
 ) -> tuple[list[str], dict[str, dict[str, Any]]]:
     scored: list[tuple[str, int]] = []
     evidence: dict[str, dict[str, Any]] = {}
@@ -315,16 +609,22 @@ def score_rule_set(
         if pattern.search(headings):
             score += 6
             sources.append("headings")
-        body_hits = count_matches(pattern, body)
+        body_hits = count_matches(pattern, body, limit=8)
         if body_hits:
-            score += body_hits * 2
+            score += min(body_hits, 6)
             sources.append("full_body")
+        identity = any(source in {"name", "description"} for source in sources)
+        heading_hit = "headings" in sources
+        if require_identity and not identity and not heading_hit and body_hits < 6:
+            continue
+        if not require_identity and not identity and not heading_hit and body_hits < 3:
+            continue
         if score >= minimum:
             scored.append((label, score))
-            evidence[label] = {"score": score, "sources": sources, "body_hits": body_hits}
+            evidence[label] = {"score": score, "sources": sources, "body_hits": body_hits, "identity": identity}
     scored.sort(key=lambda item: (-item[1], item[0]))
     if scored:
-        floor = max(minimum, int(scored[0][1] * 0.45))
+        floor = max(minimum, int(scored[0][1] * 0.58))
         scored = [item for item in scored if item[1] >= floor][:maximum]
     return [name for name, _ in scored], {name: evidence[name] for name, _ in scored}
 
@@ -392,23 +692,23 @@ def classify_document(
 
     detail, detail_ev = score_rule_set(
         name, classification_description, headings, classification_body,
-        compiled_rules["domain_detail"], 6, MAX_TAGS["domain_detail"]
+        compiled_rules["domain_detail"], 8, MAX_TAGS["domain_detail"], require_identity=True,
     )
     specialty, specialty_ev = score_rule_set(
         name, classification_description, headings, classification_body,
-        compiled_rules["specialty"], 6, MAX_TAGS["specialty"]
+        compiled_rules["specialty"], 8, MAX_TAGS["specialty"], require_identity=True,
     )
     tasks, task_ev = score_rule_set(
         name, classification_description, headings, classification_body,
-        compiled_rules["task_type"], 5, MAX_TAGS["task_type"]
+        compiled_rules["task_type"], 6, MAX_TAGS["task_type"], require_identity=True,
     )
     outputs, output_ev = score_rule_set(
         name, classification_description, headings, classification_body,
-        compiled_rules["output_type"], 5, MAX_TAGS["output_type"]
+        compiled_rules["output_type"], 6, MAX_TAGS["output_type"], require_identity=False,
     )
     tech, tech_ev = score_rule_set(
         name, classification_description, headings, classification_body,
-        compiled_rules["tech_stack"], 6, MAX_TAGS["tech_stack"]
+        compiled_rules["tech_stack"], 6, MAX_TAGS["tech_stack"], require_identity=False,
     )
 
     if not detail:
@@ -652,8 +952,15 @@ def compact_route_card(item: dict[str, Any]) -> dict[str, Any]:
         "origin": item["origin"],
         "skill_md": item["skill_md"],
         "logical_skill_md": item.get("logical_skill_md") or item["skill_md"],
-        "exact_duplicate_count": item["exact_duplicate_count"],
-        "variant_count": item["variant_count"],
+        "exact_duplicate_count": int(item.get("exact_duplicate_count") or 1),
+        "variant_count": int(item.get("variant_count") or 1),
+        "function_purpose": item.get("function_purpose") or item.get("function_summary") or "",
+        "function_weight": int(item.get("function_weight") or 100),
+        "aliases": item.get("aliases") or [],
+        "does": item.get("does") or item.get("can_do") or item.get("selection_positive_examples") or [],
+        "does_not": item.get("does_not") or item.get("cannot_do") or item.get("selection_negative_examples") or [],
+        "can_do": item.get("can_do") or item.get("does") or item.get("selection_positive_examples") or [],
+        "cannot_do": item.get("cannot_do") or item.get("does_not") or item.get("selection_negative_examples") or [],
     }
 
 
@@ -833,6 +1140,257 @@ def exclusive_publish_lock(lock_path: Path, timeout_seconds: float):
             pass
 
 
+def load_lazy_index():
+    path = Path(__file__).resolve().parent / "lazy-index.py"
+    spec = importlib.util.spec_from_file_location("skill_lazy_index", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot import {path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def existing_facet_labels(facets: dict[str, Any]) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {level: set() for level in LEVELS}
+    for level, labels in (facets.get("facets") or {}).items():
+        result.setdefault(str(level), set()).update(str(label) for label in labels)
+    return result
+
+
+def replace_ndjson_item(path: Path, item: dict[str, Any]) -> None:
+    lines: list[str] = []
+    replaced = False
+    if path.exists():
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            if not line.strip():
+                continue
+            current = json.loads(line)
+            if current.get("skill_id") == item["skill_id"] or os.path.normcase(str(current.get("skill_md") or "")) == os.path.normcase(str(item.get("skill_md") or "")):
+                lines.append(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+                replaced = True
+            else:
+                lines.append(line)
+    if not replaced:
+        lines.append(json.dumps(item, ensure_ascii=False, separators=(",", ":")))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def existing_labels_from_store(lazy, database: Path, facets: dict[str, Any]) -> dict[str, set[str]]:
+    labels = {level: set() for level in LEVELS}
+    for tag in lazy.list_tags(database):
+        labels.setdefault(str(tag.get("level") or ""), set()).add(str(tag.get("label") or ""))
+    if any(labels.values()):
+        return labels
+    return existing_facet_labels(facets)
+
+
+def patch_source_manifest(source: dict[str, Any], path: Path, item: dict[str, Any] | None, delete: bool = False) -> dict[str, Any]:
+    files = list(source.get("files") or [])
+    remaining = []
+    for entry in files:
+        if os.path.normcase(str(entry.get("skill_md") or "")) == os.path.normcase(str(path)):
+            continue
+        remaining.append(entry)
+    if not delete and item is not None:
+        remaining.append({
+            "skill_md": str(path),
+            "logical_skill_md": str(path),
+            "file_length": item["file_length"],
+            "last_write_ns": path.stat().st_mtime_ns,
+            "content_hash": item["content_hash"],
+            "classification_status": "success",
+        })
+    source["files"] = remaining
+    source["source_snapshot"] = hashlib.sha256(
+        "\n".join(
+            f"{entry['skill_md']}|{entry['file_length']}|{entry.get('last_write_ns', 0)}"
+            for entry in sorted(remaining, key=lambda value: os.path.normcase(str(value.get("skill_md") or "")))
+        ).encode("utf-8")
+    ).hexdigest()
+    return source
+
+
+def ingest_one_skill(skill_md: Path, skill_dir: Path, index_dir: Path, lock_timeout: float) -> dict[str, Any]:
+    deep_dir = index_dir / "deep"
+    metadata_path = deep_dir / "metadata.json"
+    database_path = deep_dir / "lazy-route.sqlite3"
+    if not metadata_path.exists() and not database_path.exists():
+        raise FileNotFoundError("Deep index is missing. Run a first full classification before ingesting a single skill.")
+    path = skill_md.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Skill file does not exist: {path}")
+
+    rules_path = skill_dir / "rules" / "categories.json"
+    rules = load_json(rules_path)
+    overlay_path = deep_dir / OVERLAY_FILE
+    overlay = load_tag_overlay(overlay_path)
+    rules = merge_overlay_into_rules(rules, overlay)
+    compiled_rules = {
+        "domain_detail": compile_rules(rules.get("domain_detail_rules", {})),
+        "specialty": compile_rules(rules.get("specialty_rules", {})),
+        "task_type": compile_rules(rules.get("task_rules", {})),
+        "output_type": compile_rules(rules.get("output_rules", {})),
+        "tech_stack": compile_rules(TECH_RULES),
+    }
+    lazy = load_lazy_index()
+    database = deep_dir / "lazy-route.sqlite3"
+    if database.exists():
+        lazy.migrate_database(database)
+    facets = {"facets": {}}
+    keywords = load_json(deep_dir / "label-keywords.json") if (deep_dir / "label-keywords.json").exists() else {}
+    metadata = load_json(metadata_path) if metadata_path.exists() else {"schema_version": SCHEMA_VERSION}
+    source = load_json(deep_dir / "source-manifest.json") if (deep_dir / "source-manifest.json").exists() else {"files": []}
+    existing_labels = existing_labels_from_store(lazy, database, facets)
+
+    document = path.read_text(encoding="utf-8-sig", errors="replace")
+    entry = {
+        "relative_path": path.parent.name,
+        "origin": "user-local",
+        "logical_skill_md": str(path),
+    }
+    item = classify_document(document, path, entry, rules, compiled_rules)
+    _, body = parse_frontmatter(document)
+    enrich_function_profile(item, body)
+    created_tags = apply_new_domain_tags(item, existing_labels, overlay, rules)
+    item["exact_duplicate_count"] = int(item.get("exact_duplicate_count") or 1)
+    item["duplicate_name_count"] = int(item.get("duplicate_name_count") or 1)
+    item["variant_count"] = int(item.get("variant_count") or 1)
+    card = compact_route_card(item)
+    memberships = [
+        (level, label, item["skill_id"])
+        for level in LEVELS
+        for label in facet_values(item, level)
+    ]
+
+    with exclusive_publish_lock(index_dir / ".deep-publish.lock", lock_timeout):
+        if (deep_dir / "source-manifest.json").exists() or source.get("files"):
+            source = patch_source_manifest(source, path, item, delete=False)
+            dump_json(deep_dir / "source-manifest.json", source)
+        sqlite_result = lazy.upsert_skill(database, deep_dir, card, memberships, created_tags)
+        metadata["raw_files"] = len(source.get("files") or [])
+        metadata["classified_files"] = metadata["raw_files"]
+        metadata["unique_content_candidates"] = int(sqlite_result.get("skills") or metadata.get("unique_content_candidates") or 0)
+        metadata["generated_at"] = datetime.now().isoformat(timespec="seconds")
+        metadata["source_snapshot"] = source["source_snapshot"]
+        metadata["full_body_read"] = False
+        metadata["incremental_reuse_enabled"] = True
+        metadata["reclassified_files"] = 1
+        metadata["reused_files"] = max(0, int(metadata["raw_files"]) - 1)
+        metadata["ingest_mode"] = "sqlite_upsert"
+        dump_json(metadata_path, metadata)
+        if (deep_dir / "label-keywords.json").exists():
+            keywords.setdefault("domain_detail", {})
+            keywords.setdefault("specialty", {})
+            keywords.setdefault("primary_map", {})
+            for tag in created_tags:
+                keywords[tag["level"]][tag["label"]] = tag["keywords"]
+                if tag.get("aliases"):
+                    alias_key = "query_cn_specialty_words" if tag["level"] == "specialty" else "query_cn_detail_words"
+                    current = list(keywords.setdefault(alias_key, {}).get(tag["label"]) or [])
+                    keywords[alias_key][tag["label"]] = list(dict.fromkeys([*current, *list(tag.get("aliases") or [])]))
+            keywords["primary_map"].update(overlay.get("primary_map") or {})
+            dump_json(deep_dir / "label-keywords.json", keywords)
+        dump_json(overlay_path, overlay)
+
+    return {
+        "status": "ok",
+        "mode": "ingest_skill",
+        "scanned_files": 1,
+        "full_library_scan": False,
+        "json_cards_rewritten": False,
+        "skill_name": item["name"],
+        "skill_id": item["skill_id"],
+        "skill_md": str(path),
+        "function_summary": item["function_summary"],
+        "function_purpose": item.get("function_purpose") or "",
+        "created_tags": [tag for tag in created_tags if not tag.get("merged")],
+        "merged_tags": [tag for tag in created_tags if tag.get("merged")],
+        "capability_tags": item["capability_tags"],
+        "sqlite": sqlite_result,
+        "index_dir": str(index_dir),
+    }
+
+
+def delete_one_skill(skill_md: Path, index_dir: Path, lock_timeout: float) -> dict[str, Any]:
+    deep_dir = index_dir / "deep"
+    path = skill_md.expanduser().resolve()
+    lazy = load_lazy_index()
+    database = deep_dir / "lazy-route.sqlite3"
+    metadata_path = deep_dir / "metadata.json"
+    source = load_json(deep_dir / "source-manifest.json") if (deep_dir / "source-manifest.json").exists() else {"files": []}
+    with exclusive_publish_lock(index_dir / ".deep-publish.lock", lock_timeout):
+        sqlite_result = lazy.delete_skill(database, skill_md=str(path))
+        source = patch_source_manifest(source, path, None, delete=True)
+        dump_json(deep_dir / "source-manifest.json", source)
+        if metadata_path.exists():
+            metadata = load_json(metadata_path)
+            metadata["raw_files"] = len(source.get("files") or [])
+            metadata["classified_files"] = metadata["raw_files"]
+            metadata["unique_content_candidates"] = int(sqlite_result.get("skills") or 0)
+            metadata["ingest_mode"] = "sqlite_delete"
+            dump_json(metadata_path, metadata)
+    return {
+        "status": sqlite_result.get("status") or "ok",
+        "mode": "delete_skill",
+        "scanned_files": 0,
+        "full_library_scan": False,
+        "json_cards_rewritten": False,
+        "skill_md": str(path),
+        "sqlite": sqlite_result,
+        "index_dir": str(index_dir),
+    }
+
+
+
+def refresh_function_profiles(index_dir: Path, lock_timeout: float = 120.0) -> dict[str, Any]:
+    """Rebuild can-do / cannot-do fields from classified records without reading source skills."""
+    deep_dir = index_dir / "deep"
+    ndjson_path = deep_dir / "skills-deep-index.ndjson"
+    if not ndjson_path.exists():
+        raise FileNotFoundError("Classified index is missing. Run a full classification first.")
+    items: list[dict[str, Any]] = []
+    with ndjson_path.open("r", encoding="utf-8-sig") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            enrich_function_profile(item, str(item.get("function_detail") or item.get("function_summary") or ""))
+            items.append(item)
+    for item in items:
+        item["exact_duplicate_count"] = int(item.get("exact_duplicate_count") or 1)
+        item["variant_count"] = int(item.get("variant_count") or 1)
+    representatives = annotate_duplicates(items) if items else []
+    cards = {item["skill_id"]: compact_route_card(item) for item in representatives}
+    lazy = load_lazy_index()
+    database = deep_dir / "lazy-route.sqlite3"
+    with exclusive_publish_lock(index_dir / ".deep-publish.lock", lock_timeout):
+        dump_json(deep_dir / "route-cards.json", cards)
+        with ndjson_path.open("w", encoding="utf-8", newline="\n") as handle:
+            for item in items:
+                handle.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
+        if database.exists():
+            try:
+                database.unlink()
+            except OSError:
+                pass
+        sqlite_result = lazy.build_database(deep_dir, database)
+        metadata_path = deep_dir / "metadata.json"
+        if metadata_path.exists():
+            metadata = load_json(metadata_path)
+            metadata["function_profiles_refreshed"] = True
+            metadata["sqlite"] = sqlite_result
+            dump_json(metadata_path, metadata)
+    return {
+        "status": "ok",
+        "mode": "refresh_profiles",
+        "full_library_scan": False,
+        "read_skill_bodies": False,
+        "refreshed": len(cards),
+        "sqlite": sqlite_result,
+        "index_dir": str(index_dir),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Exhaustively classify every local SKILL.md into a deep hospital-style hierarchy.")
     parser.add_argument(
@@ -852,13 +1410,40 @@ def main() -> int:
     parser.add_argument("--full-rebuild", action="store_true", help="Disable incremental reuse and classify every discovered file again.")
     parser.add_argument("--strict", action="store_true", help="Return a non-zero exit code when any source fails classification.")
     parser.add_argument("--lock-timeout", type=float, default=120.0, help="Seconds to wait for another process publishing the same deep index.")
+    parser.add_argument(
+        "--ingest-skill",
+        default="",
+        help="Classify and insert one SKILL.md into the existing index without scanning the rest of the library.",
+    )
+    parser.add_argument(
+        "--delete-skill",
+        default="",
+        help="Remove one SKILL.md from the SQLite index without scanning the rest of the library.",
+    )
+    parser.add_argument(
+        "--refresh-profiles",
+        action="store_true",
+        help="Rebuild can-do / cannot-do profiles from the existing classified index without rereading SKILL.md files.",
+    )
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
     skill_dir = Path(args.skill_dir).expanduser().resolve() if args.skill_dir else script_dir.parent
+    index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else skill_dir / ".skill-index"
+    if args.delete_skill:
+        result = delete_one_skill(Path(args.delete_skill), index_dir, args.lock_timeout)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.ingest_skill:
+        result = ingest_one_skill(Path(args.ingest_skill), skill_dir, index_dir, args.lock_timeout)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+    if args.refresh_profiles:
+        result = refresh_function_profiles(index_dir, lock_timeout=args.lock_timeout)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0 if result.get("status") == "ok" else 1
     skills_roots = resolve_skill_roots(args.skills_root)
     skills_root = skills_roots[0]
-    index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else skill_dir / ".skill-index"
     manifest_path = index_dir / "manifest.json"
     rules_path = skill_dir / "rules" / "categories.json"
     if not rules_path.exists():
@@ -866,6 +1451,9 @@ def main() -> int:
 
     manifest = load_json(manifest_path) if manifest_path.exists() else {"files": []}
     rules = load_json(rules_path)
+    existing_deep = index_dir / "deep"
+    overlay = load_tag_overlay(existing_deep / OVERLAY_FILE)
+    rules = merge_overlay_into_rules(rules, overlay)
     compiled_rules = {
         "domain_detail": compile_rules(rules.get("domain_detail_rules", {})),
         "specialty": compile_rules(rules.get("specialty_rules", {})),
@@ -879,7 +1467,6 @@ def main() -> int:
     reused_generated_at = ""
     reused_count = 0
     reclassified_count = 0
-    existing_deep = index_dir / "deep"
     rules_fingerprint = hashlib.sha256(rules_path.read_bytes()).hexdigest()
     classifier_fingerprint = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     existing_metadata: dict[str, Any] = {}
@@ -958,6 +1545,8 @@ def main() -> int:
             try:
                 document = path.read_text(encoding="utf-8-sig", errors="replace")
                 item = classify_document(document, path, entry, rules, compiled_rules)
+                _, body = parse_frontmatter(document)
+                enrich_function_profile(item, body)
                 items.append(item)
                 source_files.append({
                     "skill_md": str(path),
@@ -1069,6 +1658,7 @@ def main() -> int:
         "query_cn_specialty_words": rules.get("query_cn_specialty_words", {}),
         "query_cn_task_words": rules.get("query_cn_task_words", {}),
     })
+    dump_json(temp_dir / OVERLAY_FILE, overlay)
     with (temp_dir / "skills-deep-index.ndjson").open("w", encoding="utf-8", newline="\n") as handle:
         for item in items:
             handle.write(json.dumps(item, ensure_ascii=False, separators=(",", ":")) + "\n")
@@ -1089,9 +1679,34 @@ def main() -> int:
         moved_previous = False
         try:
             if final_dir.exists():
-                final_dir.rename(backup_dir)
-                moved_previous = True
-            temp_dir.rename(final_dir)
+                last_error: OSError | None = None
+                for attempt in range(8):
+                    try:
+                        final_dir.rename(backup_dir)
+                        last_error = None
+                        break
+                    except OSError as exc:
+                        last_error = exc
+                        time.sleep(0.25 * (attempt + 1))
+                if last_error is not None:
+                    # Windows can keep a generated SQLite file handle open briefly;
+                    # the index is disposable, so fall back to replacing it in place.
+                    robust_remove(final_dir)
+                    last_error = None
+                    moved_previous = False
+                else:
+                    moved_previous = True
+            last_error = None
+            for attempt in range(8):
+                try:
+                    temp_dir.rename(final_dir)
+                    last_error = None
+                    break
+                except OSError as exc:
+                    last_error = exc
+                    time.sleep(0.25 * (attempt + 1))
+            if last_error is not None:
+                raise last_error
         except Exception:
             if moved_previous and backup_dir.exists() and not final_dir.exists():
                 backup_dir.rename(final_dir)
@@ -1099,6 +1714,27 @@ def main() -> int:
         else:
             robust_remove(backup_dir)
     log(f"Completed: raw={files_count}, classified={len(items)}, unique={len(representatives)}, failures={len(failures)}")
+    try:
+        lazy = load_lazy_index()
+        database = final_dir / "lazy-route.sqlite3"
+        if database.exists():
+            try:
+                database.unlink()
+            except OSError:
+                stale = database.with_suffix(".sqlite3.stale")
+                try:
+                    stale.unlink()
+                except FileNotFoundError:
+                    pass
+                database.replace(stale)
+        sqlite_result = lazy.build_database(final_dir, database)
+        log(f"SQLite rebuilt: {sqlite_result.get('status')} skills={sqlite_result.get('skills')}")
+        metadata["sqlite"] = sqlite_result
+        dump_json(final_dir / "metadata.json", metadata)
+    except Exception as exc:
+        log(f"SQLite rebuild failed: {exc}")
+        metadata["sqlite_error"] = str(exc)
+        dump_json(final_dir / "metadata.json", metadata)
     build_status = "degraded" if failures else "ok"
     print(json.dumps({"status": build_status, **metadata, "output_dir": str(final_dir)}, ensure_ascii=False, indent=2))
     return 1 if args.strict and failures else 0

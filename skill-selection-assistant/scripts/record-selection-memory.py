@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import time
+import importlib.util
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator
@@ -61,6 +62,8 @@ def main() -> int:
     parser.add_argument("--query", required=True)
     parser.add_argument("--outcome", choices=OUTCOMES, default="selected")
     parser.add_argument("--selected-skill", default="")
+    parser.add_argument("--skill-id", default="", help="Preferred stable identifier from the recommendation shortlist.")
+    parser.add_argument("--matched-tags", default="", help="Comma-separated tags from the chosen shortlist item.")
     parser.add_argument("--route-type", default="")
     parser.add_argument("--category", default="")
     parser.add_argument("--notes", default="")
@@ -99,14 +102,37 @@ def main() -> int:
                 handle.write("\n## Selection Log\n")
         with memory_path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write("\n".join(lines) + "\n")
+    weight_result = {"status": "skipped"}
+    database = index_dir / "deep" / "lazy-route.sqlite3"
+    if args.selected_skill and database.exists():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "skill_lazy_index_feedback",
+                Path(__file__).resolve().with_name("lazy-index.py"),
+            )
+            if spec is not None and spec.loader is not None:
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+                matched = [part.strip() for part in str(args.matched_tags or "").split(",") if part.strip()]
+                weight_result = module.apply_feedback(
+                    database,
+                    args.selected_skill,
+                    args.outcome,
+                    skill_id=args.skill_id,
+                    matched_tags=matched,
+                )
+        except Exception as exc:
+            weight_result = {"status": "error", "message": str(exc)}
     print(json.dumps({
         "status": "recorded",
         "outcome": args.outcome,
         "selected_skill": args.selected_skill,
+        "skill_id": args.skill_id,
         "route_type": args.route_type,
         "category": args.category,
         "query_stored": args.store_query,
         "memory": str(memory_path),
+        "weight_update": weight_result,
     }, ensure_ascii=False, indent=2))
     return 0
 

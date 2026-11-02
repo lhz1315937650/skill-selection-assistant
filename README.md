@@ -11,14 +11,14 @@ A fast, local skill router for large Codex skill libraries. It narrows a request
 ## Mechanism
 
 1. **Classify the request** from the project context, task intent, domain, and technology signals.
-2. **Route by taxonomy** through layers such as domain, specialty, task type, and tech stack.
-3. **Lazy-load the route** so only the selected category is inspected; unrelated skills stay untouched.
+2. **Route by tags** so only matching skill cards are loaded.
+3. **Lazy-load the shortlist** so unrelated skills stay untouched.
 4. **Score and rerank candidates** using tags, positive examples, and negative examples.
 5. **Fallback with SQLite FTS5/BM25** when the route is weak, then rerank the recalled results.
 6. **Return only the final candidates** instead of asking the user to choose from every category.
 
 ```text
-Request -> context -> category route -> lazy load -> score/rerank -> BM25 fallback -> final skills
+Request -> context -> tag lookup -> lazy load -> score/rerank -> BM25 fallback -> final skills
 ```
 
 ## Features
@@ -47,10 +47,18 @@ python scripts/install-skill.py --force
 
 ## Use
 
+Recommend a shortlist:
+
 ```bash
 python scripts/recommend-skills.py \
   --query "build a modern React admin interface" \
   --compact
+```
+
+Add one new skill without scanning the library:
+
+```bash
+python scripts/ingest-skill.py --skill-md path/to/SKILL.md
 ```
 
 ## Maintenance

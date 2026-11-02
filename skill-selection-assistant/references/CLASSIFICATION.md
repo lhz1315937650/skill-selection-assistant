@@ -55,3 +55,12 @@ Write a complete temporary generation, serialize publication with a cross-proces
 ## Runtime Files
 
 Normal routing needs compact metadata, facets, label keywords, and route cards. Detailed NDJSON, CSV, Markdown catalogs, and hierarchy files are audit artifacts and must not be loaded into model context during ordinary selection.
+## Single-Skill Ingest
+
+Adding a skill is a database insert, not a library scan:
+
+```bash
+python scripts/ingest-skill.py --skill-md /path/to/SKILL.md
+```
+
+The ingest path reads only that file, extracts a function profile, reuses or merges tags, and upserts SQLite cards in place. JSON card catalogs are not rewritten. Use `--delete` to remove one skill. Selection feedback updates stored skill and tag weights. Full discovery remains reserved for first-time index construction and explicit rebuilds.

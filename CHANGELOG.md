@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.13.2 - 2026-09-17
+
+- rebuilt skill tags from a full reread of every local SKILL.md
+- tightened domain and specialty matching so incidental body keywords no longer spray frontend, testing, or coding tags
+- stored clearer can-do and cannot-do profiles that stay on the skill's actual function
+
+## v1.13.1 - 2026-09-17
+
+- stored explicit can-do and cannot-do profiles for every classified skill
+- recommendation shortlists now include what a skill can and cannot do
+- added --refresh-profiles to rebuild those profiles from the existing index without rereading SKILL.md files
+
+## v1.13.0 - 2026-09-17
+
+- made ordinary recommendation depend on SQLite only, so JSON card catalogs are optional after the first compile
+- stored does / does-not function profiles and routed Chinese queries through a tag alias index instead of scanning every tag
+- added directory-name pending discovery that lists new SKILL.md files without reading their bodies
+- recorded selection feedback by skill_id and garbage-collected orphan tags after a single-skill delete
+
+## v1.12.0 - 2026-09-17
+
+- made SQLite the source of truth for skill cards, tags, and memberships
+- ingest now upserts one skill without rewriting the JSON card catalog
+- added single-skill delete and in-place update
+- stored function profiles, aliases, and function/tag weights in the database
+- merged near-duplicate new-domain tags and kept Chinese/token aliases
+- routed tag recall through the tags table instead of aggregating every membership
+- wrote selection feedback into stored skill and tag weights
+
+## v1.11.0 - 2026-09-16
+
+- added single-skill ingest that classifies one `SKILL.md` and inserts it like a database row
+- stopped new-skill updates from scanning the rest of the library
+- created overlay tags when a skill belongs to a brand-new domain
+- routed ordinary recommendations through tag lookup and high-weight shortlists
+- skipped unknown facet paths instead of failing the request
+
 ## v1.10.0 - 2026-08-17
 
 - added a context-first selection pipeline that detects project identity, top-level manifests, technology signals, and skill-project business signals without recursive scanning

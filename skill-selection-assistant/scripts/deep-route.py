@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -151,7 +152,7 @@ class LazyRouteStore:
                 (level, label),
             ).fetchone()
             if exists is None:
-                raise KeyError(f"Facet not found: {level}={label}")
+                continue
             self.connection.execute(
                 """DELETE FROM active_candidates
                    WHERE skill_id NOT IN (
@@ -167,6 +168,85 @@ class LazyRouteStore:
     def candidate_count(self) -> int:
         row = self.connection.execute("SELECT COUNT(*) FROM active_candidates").fetchone()
         return int(row[0])
+
+    def select_union(self, pairs: list[tuple[str, str]]) -> None:
+        useful = [(level, label) for level, label in pairs if level and label]
+        if not useful:
+            return
+        clauses = " OR ".join("(level = ? AND label = ?)" for _ in useful)
+        params: list[str] = []
+        for level, label in useful:
+            params.extend((level, label))
+        self.connection.execute("DELETE FROM active_candidates")
+        self.connection.execute(
+            f"""INSERT INTO active_candidates(skill_id)
+                SELECT DISTINCT skill_id FROM facet_memberships
+                WHERE {clauses}""",
+            params,
+        )
+        self.selected = {f"tag_{index}": f"{level}={label}" for index, (level, label) in enumerate(useful, 1)}
+
+    def scored_tag_hits(self, query: str, keywords: dict[str, Any], limit: int = 8) -> list[dict[str, Any]]:
+        hits: list[dict[str, Any]] = []
+        query_tokens = sorted({token.lower() for token in re.findall("[a-zA-Z][a-zA-Z0-9]{1,}|" + "[\u4e00-\u9fff]{2,}", query) if len(token) >= 2})
+        try:
+            if query_tokens:
+                placeholders = ",".join("?" for _ in query_tokens)
+                rows = self.connection.execute(
+                    f"""SELECT DISTINCT t.level, t.label, t.keywords, t.aliases, t.weight
+                        FROM tags t
+                        JOIN tag_aliases a ON a.level = t.level AND a.label = t.label
+                        WHERE a.alias IN ({placeholders})""",
+                    query_tokens,
+                )
+            else:
+                rows = []
+        except sqlite3.Error:
+            rows = []
+            for level in self.levels():
+                for branch in self.branches(level):
+                    score = direct_label_score(level, branch["name"], query, keywords)
+                    if score > 0:
+                        hits.append({
+                            "level": level,
+                            "name": branch["name"],
+                            "count": branch["count"],
+                            "query_score": score,
+                            "path": f"{level}={branch['name']}",
+                        })
+            rows = []
+        for row in rows:
+            level = str(row[0])
+            label = str(row[1])
+            tag_keywords = str(row[2] or "")
+            aliases_raw = row[3] or "[]"
+            try:
+                aliases = json.loads(aliases_raw) if isinstance(aliases_raw, str) else list(aliases_raw or [])
+            except json.JSONDecodeError:
+                aliases = []
+            weight = int(row[4] or 100)
+            score = 50
+            score += direct_label_score(level, label, query, keywords)
+            lowered = query.lower()
+            if tag_keywords and regex_matches(tag_keywords, query):
+                score += 80
+            for alias in aliases:
+                alias_text = str(alias).lower()
+                if alias_text and (alias_text in lowered or alias_text in query_tokens):
+                    score += 40
+            score += max(0, weight // 20)
+            hits.append({
+                "level": level,
+                "name": label,
+                "count": 0,
+                "query_score": score,
+                "path": f"{level}={label}",
+            })
+        hits.sort(key=lambda item: (-int(item["query_score"]), str(item["name"])))
+        if not hits:
+            return []
+        top = int(hits[0]["query_score"])
+        return [item for item in hits if int(item["query_score"]) >= max(1, int(top * 0.5))][:limit]
 
     def branches(self, level: str) -> list[dict[str, Any]]:
         rows = self.connection.execute(
@@ -248,45 +328,95 @@ class LazyRouteStore:
             item["setup_requirements"] = json.loads(item.pop("setup_requirements"))
             item["selection_positive_examples"] = json.loads(item.pop("selection_positive_examples", "[]"))
             item["selection_negative_examples"] = json.loads(item.pop("selection_negative_examples", "[]"))
+            if "aliases" in item:
+                try:
+                    item["aliases"] = json.loads(item.get("aliases") or "[]")
+                except json.JSONDecodeError:
+                    item["aliases"] = []
+            for field in ("does", "does_not"):
+                if field in item:
+                    try:
+                        item[field] = json.loads(item.get(field) or "[]")
+                    except json.JSONDecodeError:
+                        item[field] = []
+            item["function_weight"] = int(item.get("function_weight") or 100)
+            item["can_do"] = list(item.get("does") or [])
+            item["cannot_do"] = list(item.get("does_not") or [])
             result.append(item)
         return result
+
+
+def load_lazy_index_module(script_dir: Path):
+    path = script_dir / "lazy-index.py"
+    spec = importlib.util.spec_from_file_location("skill_lazy_index_runtime", path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def lazy_database_is_current(database: Path, deep_dir: Path) -> bool:
     if not database.exists():
         return False
     try:
-        signature_parts = []
-        for name in ("facets.json", "route-cards.json"):
-            stat = (deep_dir / name).stat()
-            signature_parts.append(f"{name}:{stat.st_size}:{stat.st_mtime_ns}")
-        signature = "|".join(signature_parts)
         with sqlite3.connect(database) as connection:
+            tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             values = dict(connection.execute("SELECT key, value FROM metadata"))
-        return values.get("schema_version") == "1.2.0" and values.get("source_signature") == signature
+        return "cards" in tables and bool(values)
     except (OSError, sqlite3.Error):
         return False
 
 
 def ensure_lazy_database(deep_dir: Path, script_dir: Path) -> Path | None:
     database = deep_dir / "lazy-route.sqlite3"
-    if lazy_database_is_current(database, deep_dir):
-        return database
-    builder = script_dir / "lazy-index.py"
-    if not builder.exists():
-        return None
-    for attempt in range(2):
-        result = subprocess.run(
-            [sys.executable, str(builder), "--index-dir", str(deep_dir.parent), "--compact"],
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if result.returncode == 0 and lazy_database_is_current(database, deep_dir):
+    module = load_lazy_index_module(script_dir)
+    if database.exists() and module is not None:
+        try:
+            module.migrate_database(database)
             return database
-        if attempt == 0:
-            time.sleep(0.15)
-    return None
+        except (OSError, sqlite3.Error):
+            pass
+    if module is None:
+        return database if database.exists() else None
+    if (deep_dir / "route-cards.json").exists() and (deep_dir / "facets.json").exists():
+        try:
+            module.ensure_database(deep_dir, database)
+        except (OSError, sqlite3.Error, ValueError):
+            return database if database.exists() else None
+        return database if database.exists() else None
+    return database if database.exists() else None
+
+
+def load_runtime_metadata(deep_dir: Path) -> dict[str, Any]:
+    metadata_path = deep_dir / "metadata.json"
+    metadata: dict[str, Any] = {
+        "schema_version": "2.6.0",
+        "leaf_target": 24,
+        "skills_roots": [],
+        "failed_files": 0,
+        "generated_at": "",
+        "index_scope": "sqlite-source-of-truth",
+    }
+    if metadata_path.exists():
+        try:
+            loaded = load_json(metadata_path)
+            if isinstance(loaded, dict):
+                metadata.update(loaded)
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+    database = deep_dir / "lazy-route.sqlite3"
+    if database.exists():
+        try:
+            with sqlite3.connect(database) as connection:
+                values = dict(connection.execute("SELECT key, value FROM metadata"))
+            if values.get("skills_roots") and not metadata.get("skills_roots"):
+                metadata["skills_roots"] = json.loads(values["skills_roots"])
+            if values.get("skill_count"):
+                metadata["unique_content_candidates"] = int(values["skill_count"])
+        except (OSError, sqlite3.Error, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return metadata
 
 
 def sha256_file(path: Path) -> str:
@@ -517,28 +647,32 @@ def skill_score(card: dict[str, Any], query_tokens: set[str], raw_query_tokens: 
     name = str(card.get("name") or "").lower()
     name_parts = set(re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]{2,}", name))
     summary = str(card.get("function_summary") or "").lower()
+    purpose = str(card.get("function_purpose") or summary).lower()
+    aliases = " ".join(str(value).lower() for value in (card.get("aliases") or []))
     positive = " ".join(card.get("selection_positive_examples") or []).lower()
     negative = " ".join(card.get("selection_negative_examples") or []).lower()
+    does = " ".join(str(value).lower() for value in (card.get("does") or []))
+    does_not = " ".join(str(value).lower() for value in (card.get("does_not") or []))
     tags = " ".join(card.get("capability_tags") or []).lower()
-    score = 0
+    score = int(card.get("function_weight") or 100) // 5
     for token in raw_query_tokens:
         if token in GENERIC_NAME_ROUTE_TOKENS:
             continue
         if token in name_parts:
-            score += 60
+            score += 24
         elif len(token) >= 4 and token in name:
-            score += 30
+            score += 12
     for token in query_tokens:
         if token in name_parts:
-            score += 18
+            score += 10
         elif token in tags:
             score += 8
-        elif token in summary:
-            score += 4
-        if token in positive:
-            score += 7
-        if token not in GENERIC_NAME_ROUTE_TOKENS and token in negative:
-            score -= 12
+        elif token in purpose or token in summary or token in aliases:
+            score += 12
+        if token in positive or token in does:
+            score += 10
+        if token not in GENERIC_NAME_ROUTE_TOKENS and (token in negative or token in does_not):
+            score -= 16
     score += {"user-local": 8, "official-system": 6, "installed-topic": 4, "linked-external": 2}.get(card.get("origin"), 0)
     score -= min(6, int(card.get("exact_duplicate_count") or 1) - 1)
     return score
@@ -618,7 +752,7 @@ def parse_facet_path(
             raise ValueError(f"Facet level selected more than once: {level}")
         label_ids = facets.get("facets", {}).get(level, {}).get(label)
         if label_ids is None:
-            raise KeyError(f"Facet not found: {segment}")
+            continue
         candidate_ids.intersection_update(label_ids)
         selected[level] = label
     return candidate_ids, selected, shards
@@ -699,6 +833,10 @@ def rank_final_cards(
         candidate = {
             "name": item["name"],
             "function_summary": item.get("function_summary", "") if args.verbose else item.get("function_summary", "")[:220],
+            "does": list(item.get("does") or item.get("can_do") or [])[:6],
+            "does_not": list(item.get("does_not") or item.get("cannot_do") or [])[:6],
+            "can_do": list(item.get("can_do") or item.get("does") or [])[:6],
+            "cannot_do": list(item.get("cannot_do") or item.get("does_not") or [])[:6],
             "matched_tags": matched_tags(item, query_tokens, selected),
             "tag_count": len(tags),
             "setup_level": item.get("setup_level", "unknown"),
@@ -815,6 +953,11 @@ def run_lazy_facet_route(
 ) -> dict[str, Any]:
     selected = parse_selected_facets(args.path)
     store.select(selected)
+    tag_hits: list[dict[str, Any]] = []
+    if not store.selected and args.auto_route:
+        tag_hits = store.scored_tag_hits(args.query, keywords)
+        if tag_hits:
+            store.select_union([(str(item["level"]), str(item["name"])) for item in tag_hits])
     candidate_count = store.candidate_count()
     if not candidate_count:
         return {
@@ -886,6 +1029,7 @@ def run_lazy_facet_route(
             "next_level": branch_level,
             "branches": [{key: item[key] for key in ("name", "display_name", "count", "path", "query_score")} for item in branches],
             "returned_branches": len(branches),
+            "tag_hits": tag_hits,
             "instruction": "Present only these compact branches. Ask the user to choose one, then continue with its exact path.",
         }
 
@@ -903,6 +1047,7 @@ def run_lazy_facet_route(
         "content_variant_pool": content_variant_pool,
         "returned_candidates": len(candidates),
         "candidates": candidates,
+        "tag_hits": tag_hits,
         "instruction": (
             "Present each candidate with its name, function_summary as a concise description, and score as its weight "
             "or a short match reason. Never show a bare skill name. Ask which skill to activate. Read only the chosen "
@@ -921,6 +1066,7 @@ def run_facet_route(
 ) -> dict[str, Any]:
     facets = facets if facets is not None else load_json(deep_dir / "facets.json")
     cards = cards if cards is not None else load_json(deep_dir / "route-cards.json")
+    tag_hits: list[dict[str, Any]] = []
     leaf_target = args.leaf_target or int(metadata.get("leaf_target") or 24)
     candidate_ids, selected, shards = parse_facet_path(args.path, facets, cards, leaf_target)
     if not candidate_ids:
@@ -938,6 +1084,7 @@ def run_facet_route(
             "content_variant_pool": 0,
             "returned_candidates": 0,
             "candidates": [],
+            "tag_hits": tag_hits,
             "instruction": "No installed local skills are available. Offer to answer directly, install a skill, or create a new skill.",
         }
 
@@ -1041,6 +1188,7 @@ def run_facet_route(
                 for item in branches
             ],
             "returned_branches": len(branches),
+            "tag_hits": tag_hits,
             "instruction": "Present only these compact branches. Ask the user to choose one, then continue with its exact path.",
         }
 
@@ -1164,7 +1312,7 @@ def main() -> int:
     script_dir = Path(__file__).resolve().parent
     index_dir = Path(args.index_dir).expanduser().resolve() if args.index_dir else script_dir.parent / ".skill-index"
     deep_dir = index_dir / "deep"
-    metadata = load_json(deep_dir / "metadata.json")
+    metadata = load_runtime_metadata(deep_dir)
     if not args.allow_stale_index:
         freshness = check_index_freshness(
             metadata,
@@ -1237,10 +1385,19 @@ def main() -> int:
                     result = run_lazy_facet_route(args, metadata, store, keywords, index_dir)
                 result = apply_recall_fallback(args, result, store, keywords, index_dir)
                 if args.auto_route:
-                    result["route_trace"] = route_trace
+                    tag_trace = [
+                        {
+                            "level": item.get("level", ""),
+                            "selected": item.get("name", ""),
+                            "path": item.get("path", ""),
+                            "score": int(item.get("query_score") or 0),
+                        }
+                        for item in (result.get("tag_hits") or [])
+                    ]
+                    result["route_trace"] = tag_trace + route_trace
                 result["query"] = original_query
                 result["context"] = context_output
-                result["selection_pipeline"] = ["agent_context", "layered_skill_profile", "taxonomy_route", "recall_rerank_fallback"]
+                result["selection_pipeline"] = ["agent_context", "layered_skill_profile", "tag_index", "taxonomy_route", "recall_rerank_fallback"]
                 print(json.dumps(result, ensure_ascii=False, indent=2))
                 return 0
             finally:

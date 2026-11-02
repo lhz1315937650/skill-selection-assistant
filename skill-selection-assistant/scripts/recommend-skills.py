@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from typing import Any
 SCHEMA_VERSION = "3.0.0"
 DEEP_SCHEMA_VERSION = "2.6.0"
 REQUIRED_ROUTING_FILES = ("source-manifest.json", "hierarchy.json", "facets.json", "route-cards.json", "label-keywords.json")
+SQLITE_FILE = "lazy-route.sqlite3"
 
 
 def load_json(path: Path) -> Any:
@@ -33,11 +35,14 @@ def run_json(command: list[str], operation: str) -> dict[str, Any]:
 
 
 def inspect_index(index_dir: Path) -> tuple[bool, str, list[str]]:
+    import sqlite3
     deep_dir = index_dir / "deep"
     metadata_path = deep_dir / "metadata.json"
     source_path = deep_dir / "source-manifest.json"
+    database = deep_dir / SQLITE_FILE
     recovered_roots: list[str] = []
     source: dict[str, Any] = {}
+    metadata_corrupt = False
     if source_path.exists():
         try:
             loaded_source = load_json(source_path)
@@ -46,17 +51,38 @@ def inspect_index(index_dir: Path) -> tuple[bool, str, list[str]]:
                 recovered_roots = [str(value) for value in source.get("skills_roots", []) if value]
         except (OSError, ValueError, json.JSONDecodeError):
             source = {}
+    if metadata_path.exists():
+        try:
+            metadata = load_json(metadata_path)
+            if isinstance(metadata, dict):
+                metadata_values = [str(value) for value in metadata.get("skills_roots", []) if value]
+                if metadata_values:
+                    recovered_roots = metadata_values
+        except (OSError, ValueError, json.JSONDecodeError):
+            metadata = {}
+            metadata_corrupt = True
+    if database.exists():
+        if metadata_corrupt:
+            return False, "index_corrupt", recovered_roots
+        connection = None
+        try:
+            connection = sqlite3.connect(database)
+            tables = {str(row[0]) for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            values = dict(connection.execute("SELECT key, value FROM metadata"))
+            if "cards" not in tables:
+                return False, "index_incomplete", recovered_roots
+            if values.get("skills_roots") and not recovered_roots:
+                recovered_roots = [str(value) for value in json.loads(values["skills_roots"]) if value]
+            return True, "", recovered_roots
+        except (OSError, sqlite3.Error, json.JSONDecodeError, TypeError, ValueError):
+            return False, "index_corrupt", recovered_roots
+        finally:
+            if connection is not None:
+                connection.close()
     if not metadata_path.exists():
         return False, "index_missing", recovered_roots
-    try:
-        metadata = load_json(metadata_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return False, "index_corrupt", recovered_roots
     if not isinstance(metadata, dict):
         return False, "index_corrupt", recovered_roots
-    metadata_values = [str(value) for value in metadata.get("skills_roots", []) if value]
-    if metadata_values:
-        recovered_roots = metadata_values
     if metadata.get("schema_version") != DEEP_SCHEMA_VERSION:
         return False, "index_schema_changed", recovered_roots
     for name in REQUIRED_ROUTING_FILES:
@@ -102,6 +128,14 @@ def main() -> int:
         help="Stop at category branches for taxonomy debugging instead of routing them automatically.",
     )
     parser.add_argument("--debug", action="store_true", help="Show Python tracebacks for unexpected failures.")
+    parser.add_argument("--rag", action="store_true", help="Augment the rule route with lightweight vector retrieval.")
+    parser.add_argument("--rag-index", default="", help="Path to a rag-index.json file (built automatically when absent).")
+    parser.add_argument("--rag-limit", type=int, default=8)
+    parser.add_argument("--explain", action="store_true", help="Include a deterministic recommendation explanation.")
+    parser.add_argument("--explain-api-url", default="", help="Optional OpenAI-compatible chat endpoint for explanation generation.")
+    parser.add_argument("--explain-model", default="", help="Model name sent to --explain-api-url.")
+    parser.add_argument("--explain-api-key-env", default="", help="Environment variable containing the optional API key.")
+    parser.add_argument("--wiki-output", default="", help="Generate a static Wiki after routing.")
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -142,7 +176,10 @@ def main() -> int:
     if not index_valid:
         raise RuntimeError(f"Deep index remains unusable after refresh: {remaining_problem}")
 
-    metadata = load_json(metadata_path)
+    try:
+        metadata = load_json(metadata_path) if metadata_path.exists() else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        metadata = {}
     strict_freshness = bool(args.strict_freshness or args.force_freshness_check)
 
     route_command = [
@@ -195,15 +232,18 @@ def main() -> int:
         refreshed = True
         deep_result = run_json(route_command, "deep route selection after refresh")
 
-    metadata = load_json(metadata_path)
+    try:
+        metadata = load_json(metadata_path) if metadata_path.exists() else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        metadata = {}
     mode = str(deep_result.get("mode") or "")
     next_step = {
         "choose_category": "Internal routing is ambiguous. Keep branch details AI-facing; do not show them to the user.",
             "choose_skill": (
                 "Present each candidate with its name, concise function_summary description, "
-                "and weight or a short match reason; never show a bare skill name. Ask which "
-                "skill to activate. Read only the chosen SKILL.md, then read linked files "
-                "only when the active task needs them."
+                "what it can do, what it cannot do, and its weight or a short match reason; "
+                "never show a bare skill name. Ask which skill to activate. Read only the "
+                "chosen SKILL.md, then read linked files only when the active task needs them."
             ),
         "no_skills_installed": "No local skills are installed yet. Offer to answer directly, install a skill, or create a new skill.",
     }.get(mode, str(deep_result.get("instruction") or ""))
@@ -234,6 +274,51 @@ def main() -> int:
         "candidates": deep_result.get("candidates", []),
         "next_step": next_step,
     }
+    if args.rag:
+        rag_script = script_dir / "rag-index.py"
+        rag_index = Path(args.rag_index).expanduser().resolve() if args.rag_index else index_dir / "rag" / "rag-index.json"
+        if not rag_index.exists():
+            rag_build = subprocess.run(
+                [sys.executable, str(rag_script), "--index-dir", str(index_dir), "--output", str(rag_index), "--compact"],
+                text=True, capture_output=True, check=False,
+            )
+            if rag_build.returncode != 0:
+                raise RuntimeError((rag_build.stderr or rag_build.stdout).strip())
+        rag_result = run_json([sys.executable, str(rag_script), "--output", str(rag_index), "--query", args.query, "--limit", str(args.rag_limit), "--compact"], "rag retrieval")
+        output["rag"] = rag_result
+        output["selection_pipeline"] = list(output.get("selection_pipeline") or []) + ["vector_recall"]
+        if args.explain:
+            candidate_names = {str(item.get("name")): item for item in output.get("candidates") or []}
+            explanations = []
+            for item in rag_result.get("results") or []:
+                name = str(item.get("name") or "")
+                if name in candidate_names:
+                    explanations.append({
+                        "name": name,
+                        "reason": f"规则路由命中候选；向量召回相似度为 {float(item.get('score') or 0):.3f}，内容摘要与请求存在词面/语义重合。",
+                        "evidence": item.get("snippet", ""),
+                    })
+            output["explanations"] = explanations
+            if args.explain_api_url and explanations:
+                prompt = "Explain why these skill candidates match the request. Return concise JSON array with name and reason.\n" + json.dumps({"query": args.query, "candidates": explanations}, ensure_ascii=False)
+                request_body = json.dumps({"model": args.explain_model or "default", "messages": [{"role": "user", "content": prompt}], "temperature": 0}).encode("utf-8")
+                headers = {"Content-Type": "application/json"}
+                if args.explain_api_key_env:
+                    api_key = os.environ.get(args.explain_api_key_env, "")
+                    if api_key:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                try:
+                    request = urllib.request.Request(args.explain_api_url, data=request_body, headers=headers, method="POST")
+                    with urllib.request.urlopen(request, timeout=20) as response:
+                        output["explanation_provider"] = "openai-compatible"
+                        output["explanations_raw"] = json.loads(response.read().decode("utf-8"))
+                except Exception as exc:
+                    output["explanation_provider"] = "deterministic-fallback"
+                    output["explanation_error"] = type(exc).__name__
+    if args.wiki_output:
+        wiki_script = script_dir / "wiki-generate.py"
+        wiki_result = run_json([sys.executable, str(wiki_script), "--index-dir", str(index_dir), "--output-dir", args.wiki_output, "--compact"], "wiki generation")
+        output["wiki"] = wiki_result
     if args.compat:
         output["deep_route"] = deep_result
     print(json.dumps(
