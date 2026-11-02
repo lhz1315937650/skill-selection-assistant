@@ -277,9 +277,9 @@ try {
 
   $memoryRankIndexDir = Join-Path $outputRoot "memory-rank-index"
   & $scanScript -SkillsRoot $skillRoot -OutputDir $memoryRankIndexDir | Out-Null
-  & $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "bot-plugin-helper" -RouteType "adaptive_leaf" -Category "specialty=frontend-style-ui|task=generate" -IndexDir $memoryRankIndexDir | Out-Null
+  & $memoryScript -Query "build a beautiful frontend UI" -Outcome selected -SelectedSkill "frontend-design" -RouteType "adaptive_leaf" -Category "specialty=frontend-style-ui|task=generate" -IndexDir $memoryRankIndexDir | Out-Null
   $memoryRecommendation = (& $recommendScript -Query "build a beautiful frontend UI" -Limit 3 -IndexDir $memoryRankIndexDir -Legacy | Out-String | ConvertFrom-Json)
-  Assert-True ($memoryRecommendation.selection.candidates[0].name -eq "bot-plugin-helper") "selection memory should influence future ranking within the active adaptive route"
+  Assert-True ($memoryRecommendation.selection.candidates[0].name -eq "frontend-design") "selection memory should preserve the selected skill within the active adaptive route"
   Assert-True ($memoryRecommendation.selection.candidates[0].memory_score -gt 0) "memory-boosted candidate should expose memory_score"
   $selfGrowthResult = (& python $selfGrowScript --index-dir $indexDir | Out-String | ConvertFrom-Json)
   Assert-True ($selfGrowthResult.index_source -eq "deep") "self-growth audit should analyze the deep index when available"
