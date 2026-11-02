@@ -165,6 +165,14 @@ if (-not $SkipScan) {
   }
 }
 
+# Python scans can regenerate runtime caches inside the installed skill.
+# Keep published/installed managed files free of interpreter artifacts.
+Get-ChildItem -LiteralPath $Destination -Directory -Recurse -Force -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -eq "__pycache__" } |
+  Remove-Item -Recurse -Force
+Get-ChildItem -LiteralPath $Destination -File -Recurse -Force -Filter "*.pyc" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+
 [pscustomobject]@{
   status = "installed"
   version = $(if (Test-Path -LiteralPath (Join-Path $Destination "VERSION")) { (Get-Content -LiteralPath (Join-Path $Destination "VERSION") -Raw -Encoding UTF8).Trim() } else { "development" })
