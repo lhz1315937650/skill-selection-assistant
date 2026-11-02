@@ -170,7 +170,10 @@ try {
   Assert-True ($deepRecommendation.mode -eq "choose_skill") "default PowerShell recommendation should automatically reach the final skill shortlist"
   Assert-True ($deepRecommendation.storage_model -eq "sqlite_lazy") "default PowerShell recommendation should use SQLite lazy loading"
   Assert-True ($deepRecommendation.index.freshness_policy -eq "explicit") "normal PowerShell routing should not scan the whole skill library"
-  Assert-True (@($deepRecommendation.selection_pipeline).Count -eq 4) "PowerShell output should expose the four-stage selection pipeline"
+  $pipelineStages = @($deepRecommendation.selection_pipeline)
+  $requiredPipelineStages = @("agent_context", "layered_skill_profile", "taxonomy_route", "recall_rerank_fallback")
+  Assert-True (($requiredPipelineStages | Where-Object { $pipelineStages -notcontains $_ }).Count -eq 0) "PowerShell output should expose the core selection pipeline"
+  Assert-True (($pipelineStages | Where-Object { $_ -notin ($requiredPipelineStages + @("tag_index")) }).Count -eq 0) "PowerShell output should expose only known selection stages"
   Assert-True ($deepRecommendation.context.PSObject.Properties.Name -contains "project_name") "PowerShell output should expose lightweight project context"
   Assert-True ($deepRecommendation.fallback.triggered -eq $false) "a strong PowerShell taxonomy match should not invoke fallback recall"
   Assert-True (Test-Path -LiteralPath (Join-Path $indexDir "deep\lazy-route.sqlite3")) "default recommendation should create the SQLite lazy index"
