@@ -119,7 +119,7 @@
   "task_rules": {
     "summarize": "summar",
     "review": "review|audit|evaluate|critique|check|inspect",
-    "generate": "generate|compose|draft|scaffold|\\bcreate\\b|\\bwrite\\b",
+    "generate": "generate|compose|draft|scaffold|\\bcreate\\b|\\bwrite\\b|\\bbuild\\b|\\bimplement\\b|\\bdevelop\\b",
     "transform": "transform|convert|format|rewrite|refactor|migrate",
     "test-debug": "test|debug|troubleshoot|bugfix|diagnose",
     "extract": "extract|parse|scrape|transcript|ocr",
